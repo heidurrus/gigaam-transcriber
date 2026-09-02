@@ -1,6 +1,6 @@
 # GigaAM Transcriber
 
-A local web app for transcribing audio using [GigaAM](https://github.com/salute-developers/GigaAM) — an open-source speech recognition model supporting Russian, English, and 70+ other languages. Supports speaker diarization, longform audio, word-level timestamps, and in-browser call recording. Runs entirely on your machine; no data leaves your PC. CPU and GPU inference supported.
+A local web app for transcribing audio using [GigaAM](https://github.com/salute-developers/GigaAM) — an open-source speech recognition model supporting Russian, English, and 70+ other languages. Supports speaker diarization, longform audio, word-level timestamps, and in-browser call recording. Runs entirely on your machine; no data leaves your PC. CPU and GPU inference supported (CUDA on Windows/Linux, MPS on Apple Silicon Mac).
 
 ---
 
@@ -21,7 +21,15 @@ A local web app for transcribing audio using [GigaAM](https://github.com/salute-
 
 ### 1. Install Python
 
-Python 3.10 or newer. Download from [python.org](https://www.python.org/downloads/).
+Python 3.10 or newer.
+
+**Windows/Linux:** Download from [python.org](https://www.python.org/downloads/).
+
+**macOS:**
+```bash
+brew install python
+```
+Or download from [python.org](https://www.python.org/downloads/).
 
 Verify:
 ```bash
@@ -32,19 +40,29 @@ python --version
 
 ### 2. Install ffmpeg
 
-ffmpeg is required for recording transcription (WebM → WAV conversion). The easiest way on Windows:
+ffmpeg is required for WebM → WAV conversion (used when transcribing recordings).
 
-**Option A — winget (built into Windows 10/11):**
+**Windows — winget (built into Windows 10/11):**
 ```bash
 winget install ffmpeg
 ```
 
-**Option B — chocolatey:**
+**Windows — chocolatey:**
 ```bash
 choco install ffmpeg
 ```
 
-**Option C — manual:** Download the "full build" from [gyan.dev/ffmpeg/builds](https://www.gyan.dev/ffmpeg/builds/), extract it, and add the `bin` folder to your system PATH.
+**Windows — manual:** Download the "full build" from [gyan.dev/ffmpeg/builds](https://www.gyan.dev/ffmpeg/builds/), extract it, and add the `bin` folder to your system PATH.
+
+**macOS:**
+```bash
+brew install ffmpeg
+```
+
+**Linux (Debian/Ubuntu):**
+```bash
+sudo apt install ffmpeg
+```
 
 Verify:
 ```bash
@@ -96,8 +114,9 @@ Model weights download automatically on first use and are cached locally. After 
 
 ### 6. GPU support (optional)
 
-Skip this if you don't have an NVIDIA GPU. The app works fine on CPU.
+Skip this if you don't have a GPU. The app works fine on CPU.
 
+**Windows/Linux — NVIDIA GPU (CUDA):**
 ```bash
 # Check your driver and CUDA version
 nvidia-smi
@@ -106,7 +125,11 @@ nvidia-smi
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 ```
 
-After this the GPU button in the UI will activate. GPU is significantly faster for long files and diarization.
+**macOS — Apple Silicon (MPS):**
+
+No extra install needed. PyTorch already includes MPS support. The GPU button will be active automatically on M1/M2/M3/M4 Macs.
+
+After installing CUDA PyTorch (or on Apple Silicon), the GPU button in the UI will activate. GPU is significantly faster for long files and diarization.
 
 ---
 
@@ -129,6 +152,8 @@ The terminal will print a status summary:
 ```
 
 Open **http://localhost:5000** in your browser. Use Chrome or Edge — Firefox works for transcription but not for the call recorder.
+
+**macOS note:** On first launch, macOS may ask for permission to use the microphone. Allow it. For call recording, Chrome also needs Screen Recording permission — go to System Settings → Privacy & Security → Screen Recording and enable it for Chrome.
 
 To stop: `Ctrl+C` in the terminal.
 
@@ -172,5 +197,9 @@ Model weights download from HuggingFace on first use and are cached locally. Sub
 **"GPU requested but CUDA is not available"** — follow step 6. Make sure you install the CUDA version of PyTorch, not the default CPU version.
 
 **Diarization is slow** — expected on CPU. Enable GPU (step 6) for a significant speedup.
+
+**macOS: call recorder doesn't capture system audio** — Safari and Firefox don't support `getDisplayMedia` with system audio. Use Chrome. When the screen-share dialog appears, check "Share system audio" (or "Share tab audio" if recording a specific tab).
+
+**macOS: "command not found: python"** — use `python3` instead, or create an alias: `alias python=python3`.
 
 **App appears frozen on first transcription** — it's downloading model weights (~500MB for v3_e2e_rnnt). This only happens once. The progress bar will show "Loading model…" while it loads.

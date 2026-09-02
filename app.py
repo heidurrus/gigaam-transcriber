@@ -26,6 +26,7 @@ app = Flask(__name__, static_folder="static")
 
 CUDA_AVAILABLE = torch.cuda.is_available()
 GPU_NAME = torch.cuda.get_device_name(0) if CUDA_AVAILABLE else None
+MPS_AVAILABLE = torch.backends.mps.is_available() if hasattr(torch.backends, "mps") else False
 
 # Check ffmpeg availability once at startup
 try:
@@ -266,7 +267,7 @@ def list_models():
 
 @app.route("/device-info")
 def device_info():
-    return jsonify({"cuda": CUDA_AVAILABLE, "gpu_name": GPU_NAME})
+    return jsonify({"cuda": CUDA_AVAILABLE, "gpu_name": GPU_NAME, "mps": MPS_AVAILABLE})
 
 
 @app.route("/transcribe", methods=["POST"])
@@ -284,6 +285,9 @@ def transcribe():
 
     if device == "cuda" and not CUDA_AVAILABLE:
         return jsonify({"error": "GPU requested but CUDA is not available. Install PyTorch with CUDA support — see README."}), 400
+
+    if device == "mps" and not MPS_AVAILABLE:
+        return jsonify({"error": "MPS requested but Apple Silicon GPU is not available."}), 400
 
     audio_file = request.files["audio"]
     suffix = os.path.splitext(audio_file.filename)[1].lower() or ".wav"
@@ -331,7 +335,13 @@ if __name__ == "__main__":
     print("  GigaAM Transcriber")
     print("  " + "-" * 40)
     print(f"  ffmpeg   : {'found' if FFMPEG_AVAILABLE else 'NOT FOUND — install from ffmpeg.org and add to PATH'}")
-    print(f"  GPU      : {GPU_NAME if CUDA_AVAILABLE else 'not available (CPU only)'}")
+    if CUDA_AVAILABLE:
+        gpu_str = GPU_NAME
+    elif MPS_AVAILABLE:
+        gpu_str = "Apple Silicon (MPS)"
+    else:
+        gpu_str = "not available (CPU only)"
+    print(f"  GPU      : {gpu_str}")
     print(f"  HF token : {'set' if hf_token else 'not set — diarization and longform disabled'}")
     print("  " + "-" * 40)
     print("  Open http://localhost:5000 in Chrome or Edge")

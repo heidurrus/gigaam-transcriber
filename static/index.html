@@ -522,13 +522,23 @@
   const btnCpu = document.getElementById("btn-cpu");
   const btnGpu = document.getElementById("btn-gpu");
 
+  let gpuDevice = "cuda"; // will be updated to "mps" on Apple Silicon
+
   fetch("/device-info").then(r => r.json()).then(info => {
     if (info.cuda) {
+      gpuDevice = "cuda";
       btnGpu.disabled = false;
       btnGpu.title = info.gpu_name || "GPU";
       btnGpu.textContent = "GPU";
+      btnGpu.onclick = () => setDevice("cuda");
+    } else if (info.mps) {
+      gpuDevice = "mps";
+      btnGpu.disabled = false;
+      btnGpu.title = "Apple Silicon GPU (MPS)";
+      btnGpu.textContent = "GPU";
+      btnGpu.onclick = () => setDevice("mps");
     } else {
-      btnGpu.title = "No CUDA GPU detected";
+      btnGpu.title = "No GPU detected";
     }
   });
 
@@ -536,8 +546,8 @@
     selectedDevice = d;
     btnCpu.style.background = d === "cpu" ? "#4f8ef7" : "#0f1117";
     btnCpu.style.color = d === "cpu" ? "#fff" : "#94a3b8";
-    btnGpu.style.background = d === "cuda" ? "#4f8ef7" : "#0f1117";
-    btnGpu.style.color = d === "cuda" ? "#fff" : "#94a3b8";
+    btnGpu.style.background = d === gpuDevice ? "#4f8ef7" : "#0f1117";
+    btnGpu.style.color = d === gpuDevice ? "#fff" : "#94a3b8";
   }
 
   // ── Speaker colors ───────────────────────────────────────────────────────
