@@ -3,6 +3,11 @@ import subprocess
 import tempfile
 import threading
 import uuid
+import warnings
+
+# Suppress pyannote's torchcodec warning — we pass waveform dicts so it's never used
+warnings.filterwarnings("ignore", message=".*torchcodec.*")
+
 import torch
 import gigaam
 from gigaam.preprocess import load_audio, SAMPLE_RATE
@@ -21,6 +26,13 @@ app = Flask(__name__, static_folder="static")
 
 CUDA_AVAILABLE = torch.cuda.is_available()
 GPU_NAME = torch.cuda.get_device_name(0) if CUDA_AVAILABLE else None
+
+# Check ffmpeg availability once at startup
+try:
+    subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
+    FFMPEG_AVAILABLE = True
+except (FileNotFoundError, subprocess.CalledProcessError):
+    FFMPEG_AVAILABLE = False
 
 _models = {}
 _model_lock = threading.Lock()
@@ -44,11 +56,16 @@ AVAILABLE_MODELS = [
     "multilingual_large_ctc",
 ]
 
-# Formats soundfile can't read — need ffmpeg pre-conversion to WAV
+# Formats that need ffmpeg conversion to WAV before GigaAM can read them
 NEEDS_CONVERSION = {".webm", ".ogg", ".opus", ".mp4", ".m4a", ".weba"}
 
 
 def convert_to_wav(input_path):
+    if not FFMPEG_AVAILABLE:
+        raise RuntimeError(
+            "ffmpeg is not installed or not on PATH. "
+            "Install it from https://ffmpeg.org/download.html and add it to your PATH."
+        )
     wav_path = input_path + ".wav"
     subprocess.run(
         ["ffmpeg", "-y", "-i", input_path, "-ar", "16000", "-ac", "1", wav_path],
@@ -69,6 +86,11 @@ def get_diarization_pipeline(device):
     global _diarization_pipeline
     with _diarization_lock:
         if _diarization_pipeline is None:
+            if not hf_token:
+                raise RuntimeError(
+                    "HF_TOKEN is not set. Create a .env file with HF_TOKEN=your_token. "
+                    "See README for instructions."
+                )
             from pyannote.audio import Pipeline
             _diarization_pipeline = Pipeline.from_pretrained(
                 "pyannote/speaker-diarization-3.1",
@@ -84,17 +106,14 @@ def set_progress(job_id, pct, msg):
 
 
 def transcribe_with_diarization(job_id, model, audio_path, device):
-    if not hf_token:
-        return None, "HF_TOKEN not set in .env — required for diarization"
-
     set_progress(job_id, 15, "Loading diarization pipeline…")
     pipeline = get_diarization_pipeline(device)
 
     set_progress(job_id, 25, "Loading audio…")
     audio = load_audio(audio_path)  # (time,) at 16kHz
 
-    # Pass as waveform dict — pyannote uses it directly, bypassing file I/O entirely.
-    # This avoids the torchcodec/AudioDecoder dependency which is broken on Windows.
+    # Pass as waveform dict — pyannote uses it directly, bypassing file I/O and
+    # the torchcodec dependency which is broken on Windows without full-shared FFmpeg DLLs.
     waveform_dict = {
         "waveform": audio.unsqueeze(0).float().cpu(),  # (1, time)
         "sample_rate": SAMPLE_RATE,
@@ -148,7 +167,10 @@ def transcribe_with_diarization(job_id, model, audio_path, device):
 
 def do_longform(model, audio_path):
     if not hf_token:
-        return None, "Audio is too long. Add HF_TOKEN to .env to enable longform transcription."
+        return None, (
+            "Audio is too long for short-form transcription (max ~25s). "
+            "Add HF_TOKEN to .env to enable longform mode. See README."
+        )
     segments = model.transcribe_longform(audio_path)
     result_segments = [
         {"start": round(seg.start, 3), "end": round(seg.end, 3), "text": seg.text}
@@ -261,7 +283,7 @@ def transcribe():
         return jsonify({"error": f"Unknown model: {model_name}"}), 400
 
     if device == "cuda" and not CUDA_AVAILABLE:
-        return jsonify({"error": "GPU requested but CUDA is not available on this machine."}), 400
+        return jsonify({"error": "GPU requested but CUDA is not available. Install PyTorch with CUDA support — see README."}), 400
 
     audio_file = request.files["audio"]
     suffix = os.path.splitext(audio_file.filename)[1].lower() or ".wav"
@@ -277,7 +299,7 @@ def transcribe():
             audio_path = wav_path
         except Exception as e:
             os.unlink(tmp_path)
-            return jsonify({"error": f"Audio conversion failed: {e}"}), 500
+            return jsonify({"error": str(e)}), 500
     else:
         audio_path = tmp_path
 
@@ -305,5 +327,13 @@ def job_status(job_id):
 
 
 if __name__ == "__main__":
-    print("GigaAM transcription server running at http://localhost:5000")
+    print()
+    print("  GigaAM Transcriber")
+    print("  " + "-" * 40)
+    print(f"  ffmpeg   : {'found' if FFMPEG_AVAILABLE else 'NOT FOUND — install from ffmpeg.org and add to PATH'}")
+    print(f"  GPU      : {GPU_NAME if CUDA_AVAILABLE else 'not available (CPU only)'}")
+    print(f"  HF token : {'set' if hf_token else 'not set — diarization and longform disabled'}")
+    print("  " + "-" * 40)
+    print("  Open http://localhost:5000 in Chrome or Edge")
+    print()
     app.run(host="0.0.0.0", port=5000, debug=False)
