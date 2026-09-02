@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GigaAM Transcriber</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px;
+      gap: 16px;
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: -0.5px;
+    }
+
+    .subtitle {
+      color: #94a3b8;
+      font-size: 0.9rem;
+      margin-bottom: 20px;
+    }
+
+    .card {
+      background: #1e2433;
+      border: 1px solid #2d3748;
+      border-radius: 12px;
+      padding: 28px;
+      width: 100%;
+      max-width: 720px;
+    }
+
+    .card-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #94a3b8;
+      margin-bottom: 20px;
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex: 1;
+      min-width: 160px;
+    }
+
+    label {
+      font-size: 0.8rem;
+      color: #94a3b8;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    select {
+      background: #0f1117;
+      color: #e2e8f0;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      outline: none;
+    }
+
+    select:focus { border-color: #4f8ef7; }
+
+    .toggles {
+      display: flex;
+      gap: 24px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .toggle {
+      position: relative;
+      width: 40px;
+      height: 22px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .toggle input { display: none; }
+
+    .toggle-track {
+      position: absolute;
+      inset: 0;
+      background: #2d3748;
+      border-radius: 999px;
+      transition: background 0.2s;
+    }
+
+    .toggle input:checked + .toggle-track { background: #4f8ef7; }
+
+    .toggle-thumb {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 16px;
+      height: 16px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+
+    .toggle input:checked ~ .toggle-thumb { transform: translateX(18px); }
+
+    .drop-zone {
+      border: 2px dashed #2d3748;
+      border-radius: 10px;
+      padding: 36px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      margin-bottom: 20px;
+      position: relative;
+    }
+
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: #4f8ef7;
+      background: rgba(79, 142, 247, 0.05);
+    }
+
+    .drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .drop-icon { font-size: 2.2rem; margin-bottom: 10px; }
+    .drop-text { color: #94a3b8; font-size: 0.9rem; }
+    .drop-text span { color: #4f8ef7; }
+
+    .file-name {
+      margin-top: 8px;
+      font-size: 0.85rem;
+      color: #60a5fa;
+      font-weight: 500;
+    }
+
+    button {
+      width: 100%;
+      padding: 13px;
+      background: #4f8ef7;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+    }
+
+    button:hover { background: #3b7de8; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-secondary {
+      background: #2d3748;
+      font-size: 0.9rem;
+      padding: 10px;
+    }
+
+    .btn-secondary:hover { background: #3d4a60; }
+
+    .btn-danger {
+      background: #dc2626;
+    }
+
+    .btn-danger:hover { background: #b91c1c; }
+
+    .status {
+      margin-top: 16px;
+      font-size: 0.85rem;
+      color: #94a3b8;
+      min-height: 20px;
+      text-align: center;
+    }
+
+    .status.error { color: #f87171; }
+
+    /* Recording card */
+    .rec-controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .rec-controls button { width: auto; flex: 1; }
+
+    .rec-indicator {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.9rem;
+      color: #f87171;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    .rec-indicator.active { display: flex; }
+
+    .rec-dot {
+      width: 10px;
+      height: 10px;
+      background: #f87171;
+      border-radius: 50%;
+      animation: pulse 1s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .rec-ready {
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .rec-ready.show { display: flex; }
+
+    .rec-ready audio {
+      width: 100%;
+      border-radius: 8px;
+    }
+
+    .rec-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .rec-actions button { flex: 1; }
+
+    /* Results */
+    .result-box {
+      margin-top: 28px;
+      display: none;
+    }
+
+    .result-label {
+      font-size: 0.8rem;
+      color: #94a3b8;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+
+    .result-text {
+      background: #0f1117;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      padding: 16px;
+      font-size: 0.95rem;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .copy-btn {
+      width: auto;
+      margin-top: 10px;
+      padding: 8px 18px;
+      background: #2d3748;
+      font-size: 0.85rem;
+      font-weight: 500;
+      border-radius: 6px;
+    }
+
+    .copy-btn:hover { background: #3d4a60; }
+
+    .words-table, .segments-table {
+      margin-top: 20px;
+      display: none;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+
+    th {
+      text-align: left;
+      padding: 8px 12px;
+      color: #94a3b8;
+      border-bottom: 1px solid #2d3748;
+      font-weight: 500;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    td {
+      padding: 7px 12px;
+      border-bottom: 1px solid #1a2030;
+      vertical-align: top;
+    }
+
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(79, 142, 247, 0.04); }
+
+    .speaker-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .progress-wrap {
+      margin-top: 16px;
+      display: none;
+    }
+
+    .progress-wrap.show { display: block; }
+
+    .progress-bar-bg {
+      background: #2d3748;
+      border-radius: 999px;
+      height: 6px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: #4f8ef7;
+      border-radius: 999px;
+      transition: width 0.4s ease;
+      width: 0%;
+    }
+
+    .progress-msg {
+      font-size: 0.82rem;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid #4f8ef7;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<h1>GigaAM Transcriber</h1>
+<p class="subtitle">Local speech recognition — nothing leaves your machine</p>
+
+<!-- Transcribe card -->
+<div class="card">
+  <div class="card-title">Transcribe a file</div>
+
+  <div class="row">
+    <div class="field">
+      <label for="model-select">Model</label>
+      <select id="model-select"></select>
+    </div>
+    <div class="field" style="flex:0;min-width:140px;">
+      <label>Device</label>
+      <div id="device-toggle" style="display:flex;border:1px solid #2d3748;border-radius:8px;overflow:hidden;height:41px;">
+        <button id="btn-cpu" onclick="setDevice('cpu')" style="flex:1;border-radius:0;border:none;font-size:0.85rem;padding:0 12px;background:#4f8ef7;color:#fff;">CPU</button>
+        <button id="btn-gpu" onclick="setDevice('cuda')" style="flex:1;border-radius:0;border:none;font-size:0.85rem;padding:0 12px;background:#0f1117;color:#94a3b8;" disabled title="GPU not available">GPU</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toggles">
+    <div class="toggle-row">
+      <label class="toggle">
+        <input type="checkbox" id="diarize-toggle" />
+        <div class="toggle-track"></div>
+        <div class="toggle-thumb"></div>
+      </label>
+      <span style="font-size:0.9rem;">Speaker diarization <span style="color:#94a3b8;font-size:0.8rem;">(who said what)</span></span>
+    </div>
+
+    <div class="toggle-row" id="timestamps-row">
+      <label class="toggle">
+        <input type="checkbox" id="timestamps-toggle" />
+        <div class="toggle-track"></div>
+        <div class="toggle-thumb"></div>
+      </label>
+      <span style="font-size:0.9rem;">Word timestamps</span>
+    </div>
+  </div>
+
+  <div class="drop-zone" id="drop-zone">
+    <input type="file" id="file-input" accept="audio/*,video/*" />
+    <div class="drop-icon">🎙</div>
+    <div class="drop-text">Drop an audio file here, or <span>browse</span></div>
+    <div class="drop-text" style="margin-top:4px;font-size:0.8rem;">WAV, MP3, FLAC, OGG, M4A, WebM…</div>
+    <div class="file-name" id="file-name"></div>
+  </div>
+
+  <button id="transcribe-btn" disabled>Transcribe</button>
+
+  <div class="progress-wrap" id="progress-wrap">
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" id="progress-bar"></div>
+    </div>
+    <div class="progress-msg">
+      <span class="spinner"></span>
+      <span id="progress-msg-text"></span>
+      <span id="progress-elapsed" style="margin-left:auto;color:#64748b;font-size:0.78rem;"></span>
+    </div>
+  </div>
+  <div class="status" id="status"></div>
+
+  <div class="result-box" id="result-box">
+    <div class="result-label">Transcript</div>
+    <div class="result-text" id="result-text"></div>
+    <button class="copy-btn" id="copy-btn">Copy</button>
+
+    <div class="words-table" id="words-table">
+      <div class="result-label" style="margin-top:20px;">Word timestamps</div>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Word</th><th>Start</th><th>End</th></tr>
+        </thead>
+        <tbody id="words-body"></tbody>
+      </table>
+    </div>
+
+    <div class="segments-table" id="segments-table">
+      <div class="result-label" style="margin-top:20px;">Segments</div>
+      <table>
+        <thead id="segments-thead"></thead>
+        <tbody id="segments-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Record card -->
+<div class="card">
+  <div class="card-title">Record a call</div>
+  <p style="font-size:0.85rem;color:#94a3b8;margin-bottom:16px;">
+    Captures all system audio output (Teams, Discord, etc.) mixed with your microphone.<br>
+    Requires Chrome or Edge. When prompted, share any screen and check <strong style="color:#e2e8f0;">"Share system audio"</strong>.
+  </p>
+
+  <div class="rec-indicator" id="rec-indicator">
+    <div class="rec-dot"></div>
+    <span>Recording — <span id="rec-timer">00:00</span></span>
+  </div>
+
+  <div class="rec-controls">
+    <button id="rec-start-btn" class="btn-secondary">Start Recording</button>
+    <button id="rec-stop-btn" class="btn-secondary btn-danger" disabled>Stop</button>
+  </div>
+
+  <div class="rec-ready" id="rec-ready">
+    <audio id="rec-playback" controls></audio>
+    <div class="rec-actions">
+      <button class="btn-secondary" id="rec-download-btn">Download</button>
+      <button id="rec-transcribe-btn">Transcribe recording</button>
+    </div>
+  </div>
+
+  <div class="status" id="rec-status"></div>
+</div>
+
+<script>
+  // ── Shared model select + device ─────────────────────────────────────────
+  const modelSelect = document.getElementById("model-select");
+  fetch("/models").then(r => r.json()).then(models => {
+    models.forEach(m => {
+      const opt = document.createElement("option");
+      opt.value = m;
+      opt.textContent = m;
+      modelSelect.appendChild(opt);
+    });
+  });
+
+  let selectedDevice = "cpu";
+  const btnCpu = document.getElementById("btn-cpu");
+  const btnGpu = document.getElementById("btn-gpu");
+
+  fetch("/device-info").then(r => r.json()).then(info => {
+    if (info.cuda) {
+      btnGpu.disabled = false;
+      btnGpu.title = info.gpu_name || "GPU";
+      btnGpu.textContent = "GPU";
+    } else {
+      btnGpu.title = "No CUDA GPU detected";
+    }
+  });
+
+  function setDevice(d) {
+    selectedDevice = d;
+    btnCpu.style.background = d === "cpu" ? "#4f8ef7" : "#0f1117";
+    btnCpu.style.color = d === "cpu" ? "#fff" : "#94a3b8";
+    btnGpu.style.background = d === "cuda" ? "#4f8ef7" : "#0f1117";
+    btnGpu.style.color = d === "cuda" ? "#fff" : "#94a3b8";
+  }
+
+  // ── Speaker colors ───────────────────────────────────────────────────────
+  const SPEAKER_COLORS = [
+    { bg: "rgba(79,142,247,0.15)",  text: "#60a5fa" },
+    { bg: "rgba(52,211,153,0.15)",  text: "#34d399" },
+    { bg: "rgba(251,146,60,0.15)",  text: "#fb923c" },
+    { bg: "rgba(192,132,252,0.15)", text: "#c084fc" },
+    { bg: "rgba(251,113,133,0.15)", text: "#fb7185" },
+    { bg: "rgba(250,204,21,0.15)",  text: "#facc15" },
+  ];
+  const speakerColorMap = {};
+  let speakerColorIdx = 0;
+
+  function getSpeakerColor(speaker) {
+    if (!(speaker in speakerColorMap)) {
+      speakerColorMap[speaker] = SPEAKER_COLORS[speakerColorIdx % SPEAKER_COLORS.length];
+      speakerColorIdx++;
+    }
+    return speakerColorMap[speaker];
+  }
+
+  // ── Transcribe card ──────────────────────────────────────────────────────
+  const fileInput = document.getElementById("file-input");
+  const dropZone = document.getElementById("drop-zone");
+  const fileNameEl = document.getElementById("file-name");
+  const transcribeBtn = document.getElementById("transcribe-btn");
+  const statusEl = document.getElementById("status");
+  const progressWrap = document.getElementById("progress-wrap");
+  const progressBar = document.getElementById("progress-bar");
+  const progressMsgText = document.getElementById("progress-msg-text");
+  const progressElapsed = document.getElementById("progress-elapsed");
+  const resultBox = document.getElementById("result-box");
+  const resultText = document.getElementById("result-text");
+  const copyBtn = document.getElementById("copy-btn");
+  const diarizeToggle = document.getElementById("diarize-toggle");
+  const timestampsRow = document.getElementById("timestamps-row");
+  const timestampsToggle = document.getElementById("timestamps-toggle");
+  const wordsTable = document.getElementById("words-table");
+  const wordsBody = document.getElementById("words-body");
+  const segmentsTable = document.getElementById("segments-table");
+  const segmentsThead = document.getElementById("segments-thead");
+  const segmentsBody = document.getElementById("segments-body");
+
+  diarizeToggle.addEventListener("change", () => {
+    timestampsRow.style.display = diarizeToggle.checked ? "none" : "flex";
+  });
+
+  let selectedFile = null;
+
+  function setFile(file) {
+    selectedFile = file;
+    fileNameEl.textContent = file.name;
+    transcribeBtn.disabled = false;
+  }
+
+  fileInput.addEventListener("change", () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
+  dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("drag-over"); });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+  dropZone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropZone.classList.remove("drag-over");
+    if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+  });
+
+  function formatElapsed(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = String(seconds % 60).padStart(2, "0");
+    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+  }
+
+  function showProgress(pct, msg, elapsed) {
+    progressWrap.classList.add("show");
+    progressBar.style.width = pct + "%";
+    progressMsgText.textContent = msg;
+    progressElapsed.textContent = elapsed ? formatElapsed(elapsed) : "";
+  }
+
+  function hideProgress() {
+    progressWrap.classList.remove("show");
+    progressBar.style.width = "0%";
+  }
+
+  async function pollJob(job_id) {
+    const start = Date.now();
+    while (true) {
+      await new Promise(r => setTimeout(r, 1500));
+      const elapsed = Math.round((Date.now() - start) / 1000);
+
+      const res = await fetch(`/job/${job_id}`);
+      const job = await res.json();
+
+      showProgress(job.progress || 0, job.progress_msg || "Processing…", elapsed);
+
+      if (job.status !== "processing") return job;
+    }
+  }
+
+  async function runTranscription(file, statusTarget) {
+    const isDiarize = diarizeToggle.checked;
+    const formData = new FormData();
+    formData.append("audio", file);
+    formData.append("model", modelSelect.value);
+    formData.append("diarize", isDiarize ? "true" : "false");
+    formData.append("word_timestamps", (!isDiarize && timestampsToggle.checked) ? "true" : "false");
+    formData.append("device", selectedDevice);
+
+    statusTarget.className = "status";
+    statusTarget.textContent = "";
+    showProgress(0, "Uploading file…", 0);
+
+    const submitRes = await fetch("/transcribe", { method: "POST", body: formData });
+    const submitted = await submitRes.json();
+
+    if (submitted.error) {
+      hideProgress();
+      statusTarget.className = "status error";
+      statusTarget.textContent = "Error: " + submitted.error;
+      return;
+    }
+
+    const job = await pollJob(submitted.job_id);
+
+    hideProgress();
+
+    if (job.status === "error") {
+      statusTarget.className = "status error";
+      statusTarget.textContent = "Error: " + job.error;
+      return;
+    }
+
+    const data = job.result;
+
+    statusTarget.textContent = "Done.";
+    resultText.textContent = data.text;
+    resultBox.style.display = "block";
+    wordsTable.style.display = "none";
+    segmentsTable.style.display = "none";
+    Object.keys(speakerColorMap).forEach(k => delete speakerColorMap[k]);
+    speakerColorIdx = 0;
+
+    if (data.words?.length) {
+      wordsBody.innerHTML = "";
+      data.words.forEach((w, i) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${i+1}</td><td>${w.text}</td><td>${w.start}s</td><td>${w.end}s</td>`;
+        wordsBody.appendChild(tr);
+      });
+      wordsTable.style.display = "block";
+    }
+
+    if (data.segments?.length) {
+      const hasSpeakers = data.diarized;
+      segmentsThead.innerHTML = hasSpeakers
+        ? "<tr><th>#</th><th>Speaker</th><th>Start</th><th>End</th><th>Text</th></tr>"
+        : "<tr><th>#</th><th>Start</th><th>End</th><th>Text</th></tr>";
+      segmentsBody.innerHTML = "";
+      data.segments.forEach((seg, i) => {
+        const tr = document.createElement("tr");
+        if (hasSpeakers) {
+          const c = getSpeakerColor(seg.speaker);
+          tr.innerHTML = `<td>${i+1}</td>
+            <td><span class="speaker-badge" style="background:${c.bg};color:${c.text}">${seg.speaker}</span></td>
+            <td style="white-space:nowrap">${seg.start}s</td>
+            <td style="white-space:nowrap">${seg.end}s</td>
+            <td>${seg.text}</td>`;
+        } else {
+          tr.innerHTML = `<td>${i+1}</td><td>${seg.start}s</td><td>${seg.end}s</td><td>${seg.text}</td>`;
+        }
+        segmentsBody.appendChild(tr);
+      });
+      segmentsTable.style.display = "block";
+    }
+
+    resultBox.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  transcribeBtn.addEventListener("click", async () => {
+    if (!selectedFile) return;
+    transcribeBtn.disabled = true;
+    resultBox.style.display = "none";
+    hideProgress();
+    try {
+      await runTranscription(selectedFile, statusEl);
+    } catch (err) {
+      hideProgress();
+      statusEl.className = "status error";
+      statusEl.textContent = "Request failed: " + err.message;
+    }
+    transcribeBtn.disabled = false;
+  });
+
+  copyBtn.addEventListener("click", () => {
+    navigator.clipboard.writeText(resultText.textContent).then(() => {
+      copyBtn.textContent = "Copied!";
+      setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500);
+    });
+  });
+
+  // ── Record card ──────────────────────────────────────────────────────────
+  const recStartBtn = document.getElementById("rec-start-btn");
+  const recStopBtn = document.getElementById("rec-stop-btn");
+  const recIndicator = document.getElementById("rec-indicator");
+  const recTimer = document.getElementById("rec-timer");
+  const recReady = document.getElementById("rec-ready");
+  const recPlayback = document.getElementById("rec-playback");
+  const recDownloadBtn = document.getElementById("rec-download-btn");
+  const recTranscribeBtn = document.getElementById("rec-transcribe-btn");
+  const recStatus = document.getElementById("rec-status");
+
+  let mediaRecorder = null;
+  let recordedChunks = [];
+  let recordingBlob = null;
+  let timerInterval = null;
+  let recStartTime = null;
+  let audioContext = null;
+
+  function formatTime(seconds) {
+    const m = String(Math.floor(seconds / 60)).padStart(2, "0");
+    const s = String(seconds % 60).padStart(2, "0");
+    return `${m}:${s}`;
+  }
+
+  recStartBtn.addEventListener("click", async () => {
+    recStatus.textContent = "";
+    recReady.classList.remove("show");
+    recordedChunks = [];
+    recordingBlob = null;
+
+    try {
+      // Capture system audio (requires screen share + "Share system audio" checkbox)
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,   // Chrome requires video:true for getDisplayMedia
+        audio: true,
+      });
+
+      // Capture microphone
+      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Stop the video track immediately — we only needed it to unlock system audio
+      displayStream.getVideoTracks().forEach(t => t.stop());
+
+      // Mix system audio + mic via AudioContext
+      audioContext = new AudioContext();
+      const dest = audioContext.createMediaStreamDestination();
+
+      const sysAudioTracks = displayStream.getAudioTracks();
+      if (sysAudioTracks.length > 0) {
+        const sysSource = audioContext.createMediaStreamSource(new MediaStream(sysAudioTracks));
+        sysSource.connect(dest);
+      } else {
+        recStatus.textContent = "Warning: no system audio captured. Make sure to check 'Share system audio' in the dialog.";
+      }
+
+      const micSource = audioContext.createMediaStreamSource(micStream);
+      micSource.connect(dest);
+
+      // Record the mixed stream
+      mediaRecorder = new MediaRecorder(dest.stream);
+      mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+      mediaRecorder.onstop = () => {
+        recordingBlob = new Blob(recordedChunks, { type: "audio/webm" });
+        const url = URL.createObjectURL(recordingBlob);
+        recPlayback.src = url;
+        recReady.classList.add("show");
+        recIndicator.classList.remove("active");
+        clearInterval(timerInterval);
+
+        // Clean up streams
+        micStream.getTracks().forEach(t => t.stop());
+        sysAudioTracks.forEach(t => t.stop());
+        audioContext.close();
+      };
+
+      mediaRecorder.start(1000);
+      recStartTime = Date.now();
+      recIndicator.classList.add("active");
+      recTimer.textContent = "00:00";
+      timerInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - recStartTime) / 1000);
+        recTimer.textContent = formatTime(elapsed);
+      }, 1000);
+
+      recStartBtn.disabled = true;
+      recStopBtn.disabled = false;
+
+    } catch (err) {
+      recStatus.className = "status error";
+      recStatus.textContent = "Could not start recording: " + err.message;
+    }
+  });
+
+  recStopBtn.addEventListener("click", () => {
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+      mediaRecorder.stop();
+    }
+    recStartBtn.disabled = false;
+    recStopBtn.disabled = true;
+  });
+
+  recDownloadBtn.addEventListener("click", () => {
+    if (!recordingBlob) return;
+    const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(recordingBlob);
+    a.download = `recording_${ts}.webm`;
+    a.click();
+  });
+
+  recTranscribeBtn.addEventListener("click", async () => {
+    if (!recordingBlob) return;
+    recTranscribeBtn.disabled = true;
+    resultBox.style.display = "none";
+    hideProgress();
+    const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const file = new File([recordingBlob], `recording_${ts}.webm`, { type: "audio/webm" });
+    try {
+      await runTranscription(file, recStatus);
+    } catch (err) {
+      hideProgress();
+      recStatus.className = "status error";
+      recStatus.textContent = "Request failed: " + err.message;
+    }
+    recTranscribeBtn.disabled = false;
+  });
+</script>
+</body>
+</html>
