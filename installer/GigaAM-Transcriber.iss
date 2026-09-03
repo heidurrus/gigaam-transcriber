@@ -21,7 +21,6 @@ SolidCompression=yes
 ; No admin rights needed — installs to LocalAppData
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
-SetupIconFile=
 WizardStyle=modern
 DisableProgramGroupPage=yes
 
@@ -46,15 +45,10 @@ Name: "{group}\Uninstall {#AppName}";      Filename: "{uninstallexe}"
 Name: "{commondesktop}\{#AppName}";        Filename: "{app}\launcher.bat";         WorkingDir: "{app}"; Tasks: desktopicon
 
 [Tasks]
-Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional icons:"; Flags: checked
+Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional icons:"
 
 [Run]
-; Run setup.bat after install so the user can see pip output
-Filename: "{cmd}"; Parameters: "/c ""{app}\setup.bat"""; WorkingDir: "{app}"; \
-    Flags: waituntilterminated shellexec; \
-    StatusMsg: "Installing Python dependencies (this may take a few minutes)..."; \
-    Description: "Run first-time setup now (recommended)"; \
-    Flags: postinstall
+Filename: "{cmd}"; Parameters: "/c ""{app}\setup.bat"""; WorkingDir: "{app}"; Flags: waituntilterminated shellexec postinstall; StatusMsg: "Installing Python dependencies (this may take a few minutes)..."; Description: "Run first-time setup now (recommended)"
 
 [Code]
 function InitializeSetup(): Boolean;
