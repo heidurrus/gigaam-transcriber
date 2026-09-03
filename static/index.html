@@ -592,9 +592,9 @@
 <!-- Record card -->
 <div class="card">
   <div class="card-title">Record a call</div>
-  <p style="font-size:0.85rem;color:#94a3b8;margin-bottom:16px;">
+  <p id="rec-hint" style="font-size:0.85rem;color:#94a3b8;margin-bottom:16px;">
     Captures all system audio output (Teams, Discord, etc.) mixed with your microphone.<br>
-    Requires Chrome or Edge. When prompted, share any screen and check <strong style="color:#e2e8f0;">"Share system audio"</strong>.
+    When prompted, share any screen and check <strong style="color:#e2e8f0;">"Share system audio"</strong>.
   </p>
 
   <div class="rec-indicator" id="rec-indicator">
@@ -628,7 +628,7 @@
 
 <script>
   // ── Mic device enumeration ───────────────────────────────────────────────
-  const inDesktopApp = typeof window.pywebview !== "undefined";
+  let inDesktopApp = false;
 
   async function populateMicDevices() {
     const select = document.getElementById("mic-select");
@@ -765,6 +765,13 @@
       btnGpu.onclick = () => setDevice("mps");
     } else {
       btnGpu.title = "No GPU detected";
+    }
+    if (info.desktop) {
+      inDesktopApp = true;
+      populateMicDevices();
+      // Update recorder card hint text for desktop mode
+      document.getElementById("rec-hint").innerHTML =
+        "Captures system audio and your microphone directly — no screen share needed.";
     }
   });
 
@@ -999,106 +1006,90 @@
 
   recStartBtn.addEventListener("click", async () => {
     recStatus.textContent = "";
+    recStatus.className = "status";
     recReady.classList.remove("show");
     recordedChunks = [];
     recordingBlob = null;
 
-    try {
-      // Capture system audio (requires screen share + "Share system audio" checkbox)
-      const displayStream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,   // Chrome requires video:true for getDisplayMedia
-        audio: true,
-      });
-
-      // Capture microphone
-      let micStream = null;
-      const deviceVal = document.getElementById("mic-select").value;
-
-      if (inDesktopApp) {
-        // Desktop: record mic via Python backend (bypasses WebView2 mic restriction)
-        await fetch("/mic-record/start", {
+    if (inDesktopApp) {
+      // ── Desktop mode: record everything via Python (no screen share needed) ──
+      try {
+        const deviceVal = document.getElementById("mic-select").value;
+        await fetch("/desktop-record/start", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({device: deviceVal !== "" ? parseInt(deviceVal) : null}),
+          body: JSON.stringify({
+            mic_device: deviceVal !== "loopback" && deviceVal !== "" ? parseInt(deviceVal) : null,
+          }),
         });
-      } else {
-        try {
-          micStream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              deviceId: deviceVal ? { ideal: deviceVal } : undefined,
-              echoCancellation: false,
-              noiseSuppression: false,
-              autoGainControl: false,
-            }
-          });
-          populateMicDevices();
-        } catch (micErr) {
-          recStatus.textContent = "Mic permission denied — recording system audio only.";
-        }
+        recStartTime = Date.now();
+        recIndicator.classList.add("active");
+        recTimer.textContent = "00:00";
+        timerInterval = setInterval(() => {
+          recTimer.textContent = formatTime(Math.floor((Date.now() - recStartTime) / 1000));
+        }, 1000);
+        recStartBtn.disabled = true;
+        recStopBtn.disabled = false;
+      } catch (err) {
+        recStatus.className = "status error";
+        recStatus.textContent = "Could not start recording: " + err.message;
+      }
+      return;
+    }
+
+    // ── Browser mode: screen share + getUserMedia ─────────────────────────
+    try {
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+
+      let micStream = null;
+      const deviceVal = document.getElementById("mic-select").value;
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            deviceId: deviceVal ? { ideal: deviceVal } : undefined,
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+          }
+        });
+        populateMicDevices();
+      } catch (_) {
+        recStatus.textContent = "Mic permission denied — recording system audio only.";
       }
 
-      // Stop the video track immediately — we only needed it to unlock system audio
       displayStream.getVideoTracks().forEach(t => t.stop());
-
-      // Mix system audio + mic via AudioContext
       audioContext = new AudioContext();
       const dest = audioContext.createMediaStreamDestination();
 
       const sysAudioTracks = displayStream.getAudioTracks();
       if (sysAudioTracks.length > 0) {
-        const sysSource = audioContext.createMediaStreamSource(new MediaStream(sysAudioTracks));
-        sysSource.connect(dest);
+        audioContext.createMediaStreamSource(new MediaStream(sysAudioTracks)).connect(dest);
       } else {
-        recStatus.textContent = "Warning: no system audio captured. Make sure to check 'Share system audio' in the dialog.";
+        recStatus.textContent = "Warning: no system audio. Check 'Share system audio' in the dialog.";
       }
 
       if (micStream) {
-        const micSource = audioContext.createMediaStreamSource(micStream);
         const micGain = audioContext.createGain();
         micGain.gain.value = 1.5;
-        micSource.connect(micGain);
+        audioContext.createMediaStreamSource(micStream).connect(micGain);
         micGain.connect(dest);
       }
 
-      // Record the mixed stream
       mediaRecorder = new MediaRecorder(dest.stream);
       mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
-      mediaRecorder.onstop = async () => {
+      mediaRecorder.onstop = () => {
         recIndicator.classList.remove("active");
         clearInterval(timerInterval);
         if (micStream) micStream.getTracks().forEach(t => t.stop());
         sysAudioTracks.forEach(t => t.stop());
         audioContext.close();
-
-        if (inDesktopApp) {
-          // Stop Python mic recording and mix with system audio server-side
-          recStatus.textContent = "Mixing audio tracks…";
-          await fetch("/mic-record/stop", { method: "POST" });
-          const sysBlob = new Blob(recordedChunks, { type: "audio/webm" });
-          const fd = new FormData();
-          fd.append("audio", sysBlob, "system.webm");
-          const mixRes = await fetch("/mix-audio", { method: "POST", body: fd });
-          if (!mixRes.ok) {
-            recStatus.textContent = "Mix failed — using system audio only.";
-            recordingBlob = sysBlob;
-          } else {
-            recordingBlob = await mixRes.blob();
-          }
-          recStatus.textContent = "";
-        } else {
-          recordingBlob = new Blob(recordedChunks, { type: "audio/webm" });
-        }
-
-        // Fix seekbar: MediaRecorder blobs report Infinity duration until seeked
+        recordingBlob = new Blob(recordedChunks, { type: "audio/webm" });
         const url = URL.createObjectURL(recordingBlob);
         recPlayback.src = url;
         recPlayback.onloadedmetadata = () => {
           if (recPlayback.duration === Infinity) {
             recPlayback.currentTime = 1e10;
-            recPlayback.ontimeupdate = () => {
-              recPlayback.ontimeupdate = null;
-              recPlayback.currentTime = 0;
-            };
+            recPlayback.ontimeupdate = () => { recPlayback.ontimeupdate = null; recPlayback.currentTime = 0; };
           }
         };
         recReady.classList.add("show");
@@ -1109,10 +1100,8 @@
       recIndicator.classList.add("active");
       recTimer.textContent = "00:00";
       timerInterval = setInterval(() => {
-        const elapsed = Math.floor((Date.now() - recStartTime) / 1000);
-        recTimer.textContent = formatTime(elapsed);
+        recTimer.textContent = formatTime(Math.floor((Date.now() - recStartTime) / 1000));
       }, 1000);
-
       recStartBtn.disabled = true;
       recStopBtn.disabled = false;
 
@@ -1122,12 +1111,37 @@
     }
   });
 
-  recStopBtn.addEventListener("click", () => {
-    if (mediaRecorder && mediaRecorder.state !== "inactive") {
-      mediaRecorder.stop();
-    }
+  recStopBtn.addEventListener("click", async () => {
     recStartBtn.disabled = false;
     recStopBtn.disabled = true;
+    recIndicator.classList.remove("active");
+    clearInterval(timerInterval);
+
+    if (inDesktopApp) {
+      recStatus.textContent = "Mixing audio tracks…";
+      const res = await fetch("/desktop-record/stop", { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json();
+        recStatus.className = "status error";
+        recStatus.textContent = err.error || "Recording failed.";
+        return;
+      }
+      recordingBlob = await res.blob();
+      recStatus.textContent = "";
+      const url = URL.createObjectURL(recordingBlob);
+      recPlayback.src = url;
+      recPlayback.onloadedmetadata = () => {
+        if (recPlayback.duration === Infinity) {
+          recPlayback.currentTime = 1e10;
+          recPlayback.ontimeupdate = () => { recPlayback.ontimeupdate = null; recPlayback.currentTime = 0; };
+        }
+      };
+      recReady.classList.add("show");
+    } else {
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+      }
+    }
   });
 
   recDownloadBtn.addEventListener("click", () => {

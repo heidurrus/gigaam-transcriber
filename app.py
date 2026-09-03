@@ -47,6 +47,10 @@ _jobs_lock = threading.Lock()
 _mic_lock = threading.Lock()
 _mic_state = {"recording": False, "frames": [], "samplerate": 44100, "path": None}
 
+_desktop_rec_lock = threading.Lock()
+_desktop_rec_state = {"recording": False}
+IS_DESKTOP = False
+
 AVAILABLE_MODELS = [
     "v3_e2e_rnnt",
     "v3_e2e_ctc",
@@ -270,116 +274,127 @@ def list_models():
 
 @app.route("/device-info")
 def device_info():
-    return jsonify({"cuda": CUDA_AVAILABLE, "gpu_name": GPU_NAME, "mps": MPS_AVAILABLE})
+    return jsonify({"cuda": CUDA_AVAILABLE, "gpu_name": GPU_NAME, "mps": MPS_AVAILABLE, "desktop": IS_DESKTOP})
 
 
 @app.route("/audio-devices")
 def audio_devices():
     try:
         import sounddevice as sd
-        devices = sd.query_devices()
+        import soundcard as sc
         inputs = [
             {"index": i, "name": d["name"]}
-            for i, d in enumerate(devices)
-            if d["max_input_channels"] > 0
+            for i, d in enumerate(sd.query_devices())
+            if d["max_input_channels"] > 0 and "loopback" not in d["name"].lower()
         ]
+        # Add system audio (loopback) option
+        try:
+            spk = sc.default_speaker()
+            inputs.insert(0, {"index": "loopback", "name": f"System audio ({spk.name})"})
+        except Exception:
+            pass
         return jsonify(inputs)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/mic-record/start", methods=["POST"])
-def mic_record_start():
+@app.route("/desktop-record/start", methods=["POST"])
+def desktop_record_start():
+    """Start recording mic + system audio via Python (desktop app mode)."""
     import sounddevice as sd
+    import soundcard as sc
     import numpy as np
+
     data = request.get_json()
-    device_index = data.get("device")  # None = system default
+    mic_index = data.get("mic_device")   # sounddevice index or None
+    sys_device = data.get("sys_device")  # "loopback" or sounddevice index
 
-    with _mic_lock:
-        _mic_state["recording"] = True
-        _mic_state["frames"] = []
-        _mic_state["path"] = None
+    SR = 16000
 
-    def _record():
-        import sounddevice as sd
-        import numpy as np
-        sr = _mic_state["samplerate"]
-        with sd.InputStream(device=device_index, samplerate=sr, channels=1, dtype="int16") as stream:
-            while _mic_state["recording"]:
-                chunk, _ = stream.read(1024)
-                _mic_state["frames"].append(chunk.copy())
+    with _desktop_rec_lock:
+        _desktop_rec_state["recording"] = True
+        _desktop_rec_state["mic_frames"] = []
+        _desktop_rec_state["sys_frames"] = []
+        _desktop_rec_state["mic_path"] = None
+        _desktop_rec_state["sys_path"] = None
 
-    threading.Thread(target=_record, daemon=True).start()
+    def _record_mic():
+        try:
+            with sd.InputStream(device=mic_index, samplerate=SR, channels=1, dtype="int16") as s:
+                while _desktop_rec_state["recording"]:
+                    chunk, _ = s.read(1024)
+                    _desktop_rec_state["mic_frames"].append(chunk.copy())
+        except Exception as e:
+            _desktop_rec_state["mic_error"] = str(e)
+
+    def _record_sys():
+        try:
+            spk = sc.default_speaker()
+            lb = sc.get_microphone(id=str(spk.name), include_loopback=True)
+            with lb.recorder(samplerate=SR, channels=1, blocksize=1024) as rec:
+                while _desktop_rec_state["recording"]:
+                    chunk = rec.record(numframes=1024)
+                    _desktop_rec_state["sys_frames"].append(
+                        (chunk * 32767).astype("int16")
+                    )
+        except Exception as e:
+            _desktop_rec_state["sys_error"] = str(e)
+
+    threading.Thread(target=_record_mic, daemon=True).start()
+    threading.Thread(target=_record_sys, daemon=True).start()
     return jsonify({"ok": True})
 
 
-@app.route("/mic-record/stop", methods=["POST"])
-def mic_record_stop():
-    import numpy as np, wave
-    with _mic_lock:
-        _mic_state["recording"] = False
+@app.route("/desktop-record/stop", methods=["POST"])
+def desktop_record_stop():
+    """Stop recording and return mixed WAV."""
+    import numpy as np, wave, time
 
-    import time; time.sleep(0.1)  # let the recording thread flush last chunk
+    _desktop_rec_state["recording"] = False
+    time.sleep(0.15)  # flush last chunks
 
-    frames = _mic_state["frames"]
-    if not frames:
-        return jsonify({"error": "No mic audio captured"}), 400
+    def _save_wav(frames, path):
+        if not frames:
+            return False
+        data = np.concatenate(frames)
+        with wave.open(path, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)
+            wf.writeframes(data.tobytes())
+        return True
 
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix="_mic.wav", delete=False) as f:
         mic_path = f.name
-
-    data = np.concatenate(frames)
-    sr = _mic_state["samplerate"]
-    with wave.open(mic_path, "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(sr)
-        wf.writeframes(data.tobytes())
-
-    _mic_state["path"] = mic_path
-    return jsonify({"ok": True, "mic_path": mic_path})
-
-
-@app.route("/mix-audio", methods=["POST"])
-def mix_audio():
-    """Mix uploaded system audio with the last Python mic recording."""
-    if "audio" not in request.files:
-        return jsonify({"error": "No audio uploaded"}), 400
-
-    mic_path = _mic_state.get("path")
-    if not mic_path or not os.path.exists(mic_path):
-        return jsonify({"error": "No mic recording available"}), 400
-
-    sys_file = request.files["audio"]
-    suffix = os.path.splitext(sys_file.filename)[1].lower() or ".webm"
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix="_sys.wav", delete=False) as f:
         sys_path = f.name
-    sys_file.save(sys_path)
 
-    mixed_path = sys_path + "_mixed.wav"
-    try:
+    has_mic = _save_wav(_desktop_rec_state.get("mic_frames", []), mic_path)
+    has_sys = _save_wav(_desktop_rec_state.get("sys_frames", []), sys_path)
+
+    mixed_path = mic_path + "_mixed.wav"
+
+    if has_mic and has_sys:
         subprocess.run(
-            [
-                "ffmpeg", "-y",
-                "-i", sys_path,
-                "-i", mic_path,
-                "-filter_complex", "amix=inputs=2:duration=shortest:normalize=0",
-                "-ar", "16000", "-ac", "1",
-                mixed_path,
-            ],
+            ["ffmpeg", "-y", "-i", sys_path, "-i", mic_path,
+             "-filter_complex", "amix=inputs=2:duration=longest:normalize=0",
+             "-ar", "16000", "-ac", "1", mixed_path],
             check=True, capture_output=True,
         )
-    except Exception as e:
+        os.unlink(mic_path)
         os.unlink(sys_path)
-        return jsonify({"error": f"Mix failed: {e}"}), 500
-
-    os.unlink(sys_path)
-    os.unlink(mic_path)
-    _mic_state["path"] = None
+    elif has_sys:
+        os.rename(sys_path, mixed_path)
+        if os.path.exists(mic_path): os.unlink(mic_path)
+    elif has_mic:
+        os.rename(mic_path, mixed_path)
+        if os.path.exists(sys_path): os.unlink(sys_path)
+    else:
+        return jsonify({"error": "No audio captured"}), 400
 
     from flask import send_file
     return send_file(mixed_path, mimetype="audio/wav", as_attachment=False,
-                     download_name="mixed.wav")
+                     download_name="recording.wav")
 
 
 def _update_env_file(key, value):
@@ -541,6 +556,8 @@ if __name__ == "__main__":
         t = threading.Thread(target=_run_flask_background, daemon=True)
         t.start()
         _wait_for_server()
+        IS_DESKTOP = True
+
         import webbrowser
 
         class _Api:
