@@ -17,7 +17,22 @@ A local web app for transcribing audio using [GigaAM](https://github.com/salute-
 
 ---
 
-## Setup
+## Quick Install (Windows)
+
+The easiest way to get started on Windows is the one-click installer.
+
+1. Make sure [Python 3.10+](https://www.python.org/downloads/) is installed and checked **"Add Python to PATH"** during setup
+2. Download **GigaAM-Transcriber-Setup.exe** from the [Releases](https://github.com/heidurrus/gigaam-transcriber/releases) page
+3. Run the installer — it will install all Python dependencies automatically
+4. Launch from the desktop shortcut or Start Menu
+
+> The installer does not bundle model weights. They download from HuggingFace (~500MB) on first transcription and are cached locally after that.
+
+---
+
+## Manual Setup
+
+Follow these steps if you prefer to set things up yourself, or if you're on macOS/Linux.
 
 ### 1. Install Python
 

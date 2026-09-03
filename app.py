@@ -270,6 +270,52 @@ def device_info():
     return jsonify({"cuda": CUDA_AVAILABLE, "gpu_name": GPU_NAME, "mps": MPS_AVAILABLE})
 
 
+def _update_env_file(key, value):
+    """Write or update a single key in .env without touching other lines."""
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    lines = []
+    found = False
+    if os.path.exists(env_path):
+        with open(env_path, "r") as f:
+            for line in f:
+                if line.startswith(f"{key}="):
+                    if value:
+                        lines.append(f"{key}={value}\n")
+                    found = True
+                else:
+                    lines.append(line)
+    if not found and value:
+        lines.append(f"{key}={value}\n")
+    with open(env_path, "w") as f:
+        f.writelines(lines)
+
+
+@app.route("/settings", methods=["GET"])
+def get_settings():
+    return jsonify({"hf_token_set": bool(hf_token)})
+
+
+@app.route("/settings", methods=["POST"])
+def save_settings():
+    global hf_token, _diarization_pipeline
+    data = request.get_json()
+    new_token = (data.get("hf_token") or "").strip()
+
+    _update_env_file("HF_TOKEN", new_token)
+
+    hf_token = new_token or None
+    if hf_token:
+        os.environ["HF_TOKEN"] = hf_token
+    else:
+        os.environ.pop("HF_TOKEN", None)
+
+    # Reset pipeline so it reloads with the new token next time
+    with _diarization_lock:
+        _diarization_pipeline = None
+
+    return jsonify({"ok": True, "hf_token_set": bool(hf_token)})
+
+
 @app.route("/transcribe", methods=["POST"])
 def transcribe():
     if "audio" not in request.files:
@@ -330,7 +376,35 @@ def job_status(job_id):
     return jsonify(job)
 
 
+def _run_flask_background():
+    import logging
+    logging.getLogger("werkzeug").setLevel(logging.ERROR)
+    app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
+
+
+def _wait_for_server(timeout=15):
+    import urllib.request, time
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            urllib.request.urlopen("http://127.0.0.1:5000/", timeout=1)
+            return True
+        except Exception:
+            time.sleep(0.1)
+    return False
+
+
 if __name__ == "__main__":
+    import sys
+
+    try:
+        import webview
+        _webview_available = True
+    except ImportError:
+        _webview_available = False
+
+    browser_mode = "--browser" in sys.argv or not _webview_available
+
     print()
     print("  GigaAM Transcriber")
     print("  " + "-" * 40)
@@ -344,6 +418,22 @@ if __name__ == "__main__":
     print(f"  GPU      : {gpu_str}")
     print(f"  HF token : {'set' if hf_token else 'not set — diarization and longform disabled'}")
     print("  " + "-" * 40)
-    print("  Open http://localhost:5000 in Chrome or Edge")
-    print()
-    app.run(host="0.0.0.0", port=5000, debug=False)
+
+    if browser_mode:
+        print("  Open http://localhost:5000 in Chrome or Edge")
+        print()
+        app.run(host="0.0.0.0", port=5000, debug=False)
+    else:
+        print("  Starting desktop window...")
+        print()
+        t = threading.Thread(target=_run_flask_background, daemon=True)
+        t.start()
+        _wait_for_server()
+        webview.create_window(
+            "GigaAM Transcriber",
+            "http://127.0.0.1:5000",
+            width=1200,
+            height=820,
+            min_size=(800, 600),
+        )
+        webview.start()

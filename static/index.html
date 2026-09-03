@@ -385,9 +385,120 @@
     }
 
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    #settings-btn {
+      position: fixed;
+      top: 14px;
+      right: 16px;
+      background: #1e2433;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      color: #94a3b8;
+      cursor: pointer;
+      padding: 8px 10px;
+      font-size: 1.1rem;
+      line-height: 1;
+      z-index: 50;
+    }
+    #settings-btn:hover { color: #e2e8f0; border-color: #4f8ef7; }
+
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+
+    .modal {
+      background: #1e2433;
+      border: 1px solid #2d3748;
+      border-radius: 12px;
+      padding: 28px;
+      width: 100%;
+      max-width: 480px;
+      position: relative;
+    }
+    .modal h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 20px;
+    }
+    .modal-close {
+      position: absolute;
+      top: 14px;
+      right: 16px;
+      background: none;
+      border: none;
+      color: #94a3b8;
+      font-size: 1.3rem;
+      cursor: pointer;
+      line-height: 1;
+    }
+    .modal-close:hover { color: #e2e8f0; }
+    .token-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .token-row input {
+      flex: 1;
+      background: #0f1117;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      color: #e2e8f0;
+      font-size: 0.9rem;
+      padding: 10px 12px;
+      font-family: monospace;
+    }
+    .token-row input:focus { outline: none; border-color: #4f8ef7; }
+    .token-status {
+      font-size: 0.82rem;
+      margin-bottom: 16px;
+    }
+    .token-status.set   { color: #34d399; }
+    .token-status.unset { color: #f87171; }
+    .settings-note {
+      font-size: 0.8rem;
+      color: #64748b;
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+    .settings-note a { color: #4f8ef7; text-decoration: none; }
+    .settings-note a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
+
+<button id="settings-btn" title="Settings" onclick="openSettings()">&#9881;</button>
+
+<!-- Settings modal -->
+<div class="modal-overlay" id="settings-modal" onclick="if(event.target===this)closeSettings()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeSettings()">&times;</button>
+    <h2>Settings</h2>
+
+    <label style="font-size:0.82rem;color:#94a3b8;display:block;margin-bottom:8px;">HuggingFace Token</label>
+    <div class="token-row">
+      <input type="password" id="hf-token-input" placeholder="hf_..." autocomplete="off" />
+      <button class="btn" id="token-show-btn" onclick="toggleTokenVisibility()" style="flex:0;padding:0 12px;font-size:0.8rem;">Show</button>
+      <button class="btn" onclick="saveSettings()" style="flex:0;padding:0 14px;">Save</button>
+    </div>
+    <div class="token-status unset" id="token-status">Not set — diarization and longform disabled</div>
+
+    <div class="settings-note">
+      Required for speaker diarization and transcription of files over ~25s.<br>
+      Get a free token at <a href="https://huggingface.co/settings/tokens" target="_blank">huggingface.co/settings/tokens</a> (Read access).<br><br>
+      Then accept terms for these models (click each link, log in, click Agree):<br>
+      &bull; <a href="https://huggingface.co/pyannote/segmentation-3.0" target="_blank">pyannote/segmentation-3.0</a><br>
+      &bull; <a href="https://huggingface.co/pyannote/speaker-diarization-3.1" target="_blank">pyannote/speaker-diarization-3.1</a><br>
+      &bull; <a href="https://huggingface.co/pyannote/speaker-diarization-community-1" target="_blank">pyannote/speaker-diarization-community-1</a>
+    </div>
+  </div>
+</div>
 
 <h1>GigaAM Transcriber</h1>
 <p class="subtitle">Local speech recognition — nothing leaves your machine</p>
@@ -507,6 +618,57 @@
 </div>
 
 <script>
+  // ── Settings modal ───────────────────────────────────────────────────────
+  function openSettings() {
+    document.getElementById("settings-modal").classList.add("open");
+    fetch("/settings").then(r => r.json()).then(updateTokenStatus);
+  }
+
+  function closeSettings() {
+    document.getElementById("settings-modal").classList.remove("open");
+  }
+
+  function updateTokenStatus(info) {
+    const el = document.getElementById("token-status");
+    if (info.hf_token_set) {
+      el.textContent = "Token is set — diarization and longform enabled";
+      el.className = "token-status set";
+    } else {
+      el.textContent = "Not set — diarization and longform disabled";
+      el.className = "token-status unset";
+    }
+  }
+
+  function toggleTokenVisibility() {
+    const input = document.getElementById("hf-token-input");
+    const btn = document.getElementById("token-show-btn");
+    if (input.type === "password") {
+      input.type = "text";
+      btn.textContent = "Hide";
+    } else {
+      input.type = "password";
+      btn.textContent = "Show";
+    }
+  }
+
+  function saveSettings() {
+    const token = document.getElementById("hf-token-input").value.trim();
+    fetch("/settings", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({hf_token: token}),
+    })
+      .then(r => r.json())
+      .then(info => {
+        updateTokenStatus(info);
+        document.getElementById("hf-token-input").value = "";
+        document.getElementById("hf-token-input").placeholder = info.hf_token_set ? "token saved — paste new one to change" : "hf_...";
+      });
+  }
+
+  // Load token status on page load for the status indicator
+  fetch("/settings").then(r => r.json()).then(updateTokenStatus);
+
   // ── Shared model select + device ─────────────────────────────────────────
   const modelSelect = document.getElementById("model-select");
   fetch("/models").then(r => r.json()).then(models => {
