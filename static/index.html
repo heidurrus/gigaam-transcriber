@@ -385,6 +385,7 @@
     }
 
     @keyframes spin { to { transform: rotate(360deg); } }
+    .hidden { display: none !important; }
 
     #settings-btn {
       position: fixed;
@@ -601,6 +602,13 @@
     <span>Recording — <span id="rec-timer">00:00</span></span>
   </div>
 
+  <div class="row" style="margin-bottom:16px;align-items:flex-end;">
+    <div class="field" style="flex:1;">
+      <label for="mic-select">Microphone</label>
+      <select id="mic-select"><option value="">Default microphone</option></select>
+    </div>
+  </div>
+
   <div class="rec-controls">
     <button id="rec-start-btn" class="btn-secondary">Start Recording</button>
     <button id="rec-stop-btn" class="btn-secondary btn-danger" disabled>Stop</button>
@@ -615,9 +623,65 @@
   </div>
 
   <div class="status" id="rec-status"></div>
+  <button id="rec-open-browser" class="btn-secondary hidden" style="margin-top:10px;font-size:0.82rem;" onclick="openInBrowser()">Open in browser (mic + system audio)</button>
 </div>
 
 <script>
+  // ── Mic device enumeration ───────────────────────────────────────────────
+  const inDesktopApp = typeof window.pywebview !== "undefined";
+
+  async function populateMicDevices() {
+    const select = document.getElementById("mic-select");
+    const current = select.value;
+    select.innerHTML = "";
+
+    if (inDesktopApp) {
+      // Desktop app: get devices from Python backend (bypasses WebView2 permission issues)
+      const res = await fetch("/audio-devices");
+      const devices = await res.json();
+      if (devices.error) return;
+      devices.forEach(d => {
+        const opt = document.createElement("option");
+        opt.value = d.index;
+        opt.textContent = d.name;
+        if (String(d.index) === current) opt.selected = true;
+        select.appendChild(opt);
+      });
+    } else {
+      // Browser mode: use Web Audio API
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const mics = devices.filter(d => d.kind === "audioinput");
+      mics.forEach((d, i) => {
+        const opt = document.createElement("option");
+        opt.value = d.deviceId;
+        opt.textContent = d.label || `Microphone ${i + 1}`;
+        if (d.deviceId === current) opt.selected = true;
+        select.appendChild(opt);
+      });
+    }
+  }
+
+  // pywebview injects window.pywebview asynchronously — wait for it then populate
+  if (typeof window.pywebview !== "undefined") {
+    populateMicDevices();
+  } else {
+    window.addEventListener("pywebviewready", populateMicDevices);
+    if (navigator.mediaDevices) {
+      populateMicDevices();
+      navigator.mediaDevices.addEventListener("devicechange", populateMicDevices);
+    }
+  }
+
+  // ── Desktop app helpers ──────────────────────────────────────────────────
+  function openInBrowser() {
+    // Calls Python via pywebview JS API to open the app in the default browser
+    if (window.pywebview && window.pywebview.api) {
+      window.pywebview.api.open_in_browser();
+    } else {
+      window.open("http://127.0.0.1:5000", "_blank");
+    }
+  }
+
   // ── Settings modal ───────────────────────────────────────────────────────
   function openSettings() {
     document.getElementById("settings-modal").classList.add("open");
@@ -947,7 +1011,31 @@
       });
 
       // Capture microphone
-      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      let micStream = null;
+      const deviceVal = document.getElementById("mic-select").value;
+
+      if (inDesktopApp) {
+        // Desktop: record mic via Python backend (bypasses WebView2 mic restriction)
+        await fetch("/mic-record/start", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({device: deviceVal !== "" ? parseInt(deviceVal) : null}),
+        });
+      } else {
+        try {
+          micStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              deviceId: deviceVal ? { ideal: deviceVal } : undefined,
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false,
+            }
+          });
+          populateMicDevices();
+        } catch (micErr) {
+          recStatus.textContent = "Mic permission denied — recording system audio only.";
+        }
+      }
 
       // Stop the video track immediately — we only needed it to unlock system audio
       displayStream.getVideoTracks().forEach(t => t.stop());
@@ -964,24 +1052,56 @@
         recStatus.textContent = "Warning: no system audio captured. Make sure to check 'Share system audio' in the dialog.";
       }
 
-      const micSource = audioContext.createMediaStreamSource(micStream);
-      micSource.connect(dest);
+      if (micStream) {
+        const micSource = audioContext.createMediaStreamSource(micStream);
+        const micGain = audioContext.createGain();
+        micGain.gain.value = 1.5;
+        micSource.connect(micGain);
+        micGain.connect(dest);
+      }
 
       // Record the mixed stream
       mediaRecorder = new MediaRecorder(dest.stream);
       mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
-      mediaRecorder.onstop = () => {
-        recordingBlob = new Blob(recordedChunks, { type: "audio/webm" });
-        const url = URL.createObjectURL(recordingBlob);
-        recPlayback.src = url;
-        recReady.classList.add("show");
+      mediaRecorder.onstop = async () => {
         recIndicator.classList.remove("active");
         clearInterval(timerInterval);
-
-        // Clean up streams
-        micStream.getTracks().forEach(t => t.stop());
+        if (micStream) micStream.getTracks().forEach(t => t.stop());
         sysAudioTracks.forEach(t => t.stop());
         audioContext.close();
+
+        if (inDesktopApp) {
+          // Stop Python mic recording and mix with system audio server-side
+          recStatus.textContent = "Mixing audio tracks…";
+          await fetch("/mic-record/stop", { method: "POST" });
+          const sysBlob = new Blob(recordedChunks, { type: "audio/webm" });
+          const fd = new FormData();
+          fd.append("audio", sysBlob, "system.webm");
+          const mixRes = await fetch("/mix-audio", { method: "POST", body: fd });
+          if (!mixRes.ok) {
+            recStatus.textContent = "Mix failed — using system audio only.";
+            recordingBlob = sysBlob;
+          } else {
+            recordingBlob = await mixRes.blob();
+          }
+          recStatus.textContent = "";
+        } else {
+          recordingBlob = new Blob(recordedChunks, { type: "audio/webm" });
+        }
+
+        // Fix seekbar: MediaRecorder blobs report Infinity duration until seeked
+        const url = URL.createObjectURL(recordingBlob);
+        recPlayback.src = url;
+        recPlayback.onloadedmetadata = () => {
+          if (recPlayback.duration === Infinity) {
+            recPlayback.currentTime = 1e10;
+            recPlayback.ontimeupdate = () => {
+              recPlayback.ontimeupdate = null;
+              recPlayback.currentTime = 0;
+            };
+          }
+        };
+        recReady.classList.add("show");
       };
 
       mediaRecorder.start(1000);

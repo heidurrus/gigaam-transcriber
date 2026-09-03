@@ -19,11 +19,21 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo  [1/4] Upgrading pip...
+echo  [1/5] Upgrading pip...
 python -m pip install --upgrade pip --quiet
 
-echo  [2/4] Installing app dependencies...
-python -m pip install -r "%~dp0requirements.txt"
+echo  [2/5] Detecting GPU...
+nvidia-smi >nul 2>&1
+if %errorlevel% == 0 (
+    echo         NVIDIA GPU detected — installing PyTorch with CUDA support...
+    python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126 --quiet
+) else (
+    echo         No NVIDIA GPU detected — installing CPU-only PyTorch...
+    python -m pip install torch torchvision torchaudio --quiet
+)
+
+echo  [3/5] Installing app dependencies...
+python -m pip install -r "%~dp0requirements.txt" --quiet
 if errorlevel 1 (
     echo.
     echo  ERROR: Failed to install dependencies. Check your internet connection.
@@ -31,8 +41,8 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo  [3/4] Installing GigaAM...
-python -m pip install "gigaam[torch,longform] @ git+https://github.com/salute-developers/GigaAM.git"
+echo  [4/5] Installing GigaAM...
+python -m pip install "gigaam[longform] @ git+https://github.com/salute-developers/GigaAM.git" --quiet
 if errorlevel 1 (
     echo.
     echo  ERROR: Failed to install GigaAM.
@@ -41,12 +51,12 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo  [4/4] Attempting to install ffmpeg via winget...
+echo  [5/5] Attempting to install ffmpeg via winget...
 winget install --id Gyan.FFmpeg -e --silent >nul 2>&1
 if errorlevel 1 (
-    echo  ffmpeg not installed via winget. If you need it, install manually from https://ffmpeg.org/download.html
+    echo         ffmpeg not installed via winget. Install manually from https://ffmpeg.org/download.html if needed.
 ) else (
-    echo  ffmpeg installed.
+    echo         ffmpeg installed.
 )
 
 echo.

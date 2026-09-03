@@ -44,6 +44,9 @@ _diarization_lock = threading.Lock()
 _jobs = {}
 _jobs_lock = threading.Lock()
 
+_mic_lock = threading.Lock()
+_mic_state = {"recording": False, "frames": [], "samplerate": 44100, "path": None}
+
 AVAILABLE_MODELS = [
     "v3_e2e_rnnt",
     "v3_e2e_ctc",
@@ -270,6 +273,115 @@ def device_info():
     return jsonify({"cuda": CUDA_AVAILABLE, "gpu_name": GPU_NAME, "mps": MPS_AVAILABLE})
 
 
+@app.route("/audio-devices")
+def audio_devices():
+    try:
+        import sounddevice as sd
+        devices = sd.query_devices()
+        inputs = [
+            {"index": i, "name": d["name"]}
+            for i, d in enumerate(devices)
+            if d["max_input_channels"] > 0
+        ]
+        return jsonify(inputs)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/mic-record/start", methods=["POST"])
+def mic_record_start():
+    import sounddevice as sd
+    import numpy as np
+    data = request.get_json()
+    device_index = data.get("device")  # None = system default
+
+    with _mic_lock:
+        _mic_state["recording"] = True
+        _mic_state["frames"] = []
+        _mic_state["path"] = None
+
+    def _record():
+        import sounddevice as sd
+        import numpy as np
+        sr = _mic_state["samplerate"]
+        with sd.InputStream(device=device_index, samplerate=sr, channels=1, dtype="int16") as stream:
+            while _mic_state["recording"]:
+                chunk, _ = stream.read(1024)
+                _mic_state["frames"].append(chunk.copy())
+
+    threading.Thread(target=_record, daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/mic-record/stop", methods=["POST"])
+def mic_record_stop():
+    import numpy as np, wave
+    with _mic_lock:
+        _mic_state["recording"] = False
+
+    import time; time.sleep(0.1)  # let the recording thread flush last chunk
+
+    frames = _mic_state["frames"]
+    if not frames:
+        return jsonify({"error": "No mic audio captured"}), 400
+
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        mic_path = f.name
+
+    data = np.concatenate(frames)
+    sr = _mic_state["samplerate"]
+    with wave.open(mic_path, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sr)
+        wf.writeframes(data.tobytes())
+
+    _mic_state["path"] = mic_path
+    return jsonify({"ok": True, "mic_path": mic_path})
+
+
+@app.route("/mix-audio", methods=["POST"])
+def mix_audio():
+    """Mix uploaded system audio with the last Python mic recording."""
+    if "audio" not in request.files:
+        return jsonify({"error": "No audio uploaded"}), 400
+
+    mic_path = _mic_state.get("path")
+    if not mic_path or not os.path.exists(mic_path):
+        return jsonify({"error": "No mic recording available"}), 400
+
+    sys_file = request.files["audio"]
+    suffix = os.path.splitext(sys_file.filename)[1].lower() or ".webm"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+        sys_path = f.name
+    sys_file.save(sys_path)
+
+    mixed_path = sys_path + "_mixed.wav"
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-i", sys_path,
+                "-i", mic_path,
+                "-filter_complex", "amix=inputs=2:duration=shortest:normalize=0",
+                "-ar", "16000", "-ac", "1",
+                mixed_path,
+            ],
+            check=True, capture_output=True,
+        )
+    except Exception as e:
+        os.unlink(sys_path)
+        return jsonify({"error": f"Mix failed: {e}"}), 500
+
+    os.unlink(sys_path)
+    os.unlink(mic_path)
+    _mic_state["path"] = None
+
+    from flask import send_file
+    return send_file(mixed_path, mimetype="audio/wav", as_attachment=False,
+                     download_name="mixed.wav")
+
+
 def _update_env_file(key, value):
     """Write or update a single key in .env without touching other lines."""
     env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
@@ -429,11 +541,20 @@ if __name__ == "__main__":
         t = threading.Thread(target=_run_flask_background, daemon=True)
         t.start()
         _wait_for_server()
+        import webbrowser
+
+        class _Api:
+            def open_in_browser(self):
+                webbrowser.open("http://127.0.0.1:5000")
+
+        storage = os.path.join(os.path.expanduser("~"), ".gigaam_transcriber")
+        os.makedirs(storage, exist_ok=True)
         webview.create_window(
             "GigaAM Transcriber",
             "http://127.0.0.1:5000",
             width=1200,
             height=820,
             min_size=(800, 600),
+            js_api=_Api(),
         )
-        webview.start()
+        webview.start(private_mode=False, storage_path=storage)

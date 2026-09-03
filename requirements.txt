@@ -1,3 +1,4 @@
 flask>=3.1
 python-dotenv>=1.0
 pywebview>=5.0
+sounddevice>=0.5
