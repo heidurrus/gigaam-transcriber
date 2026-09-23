@@ -827,20 +827,32 @@
     }
   }
 
-  async function runTranscription(file, statusTarget) {
+  // savedSourceId: transcribe audio the app already keeps (a recording) instead of uploading it.
+  async function runTranscription(file, statusTarget, savedSourceId) {
     const isDiarize = diarizeToggle.checked;
-    const formData = new FormData();
-    formData.append("audio", file);
-    formData.append("model", modelSelect.value);
-    formData.append("diarize", isDiarize ? "true" : "false");
-    formData.append("word_timestamps", (!isDiarize && timestampsToggle.checked) ? "true" : "false");
-    formData.append("device", selectedDevice);
+    const options = {
+      model: modelSelect.value,
+      diarize: isDiarize ? "true" : "false",
+      word_timestamps: (!isDiarize && timestampsToggle.checked) ? "true" : "false",
+      device: selectedDevice,
+    };
 
     statusTarget.className = "status";
     statusTarget.textContent = "";
-    showProgress(0, isTranscriptFile(file.name) ? "Reading transcript…" : "Uploading file…", 0);
+    showProgress(0, savedSourceId ? "Starting…" : isTranscriptFile(file.name) ? "Reading transcript…" : "Uploading file…", 0);
 
-    const submitRes = await fetch("/transcribe", { method: "POST", body: formData });
+    let submitRes;
+    if (savedSourceId) {
+      submitRes = await fetch(`/api/sources/${savedSourceId}/transcribe`, {
+        method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(options),
+      });
+    } else {
+      const formData = new FormData();
+      formData.append("audio", file);
+      Object.entries(options).forEach(([k, v]) => formData.append(k, v));
+      if (file.name.startsWith("recording_")) formData.append("kind", "recording");
+      submitRes = await fetch("/transcribe", { method: "POST", body: formData });
+    }
     const submitted = await submitRes.json();
 
     if (submitted.error) {
@@ -861,7 +873,7 @@
     }
 
     const data = job.result;
-    lastResult = { text: data.text, title: file.name };
+    lastResult = { text: data.text, title: file.name, source_id: data.source_id };
 
     const speakerCount = data.diarized ? new Set(data.segments.map(s => s.speaker).filter(Boolean)).size : 0;
     const resultSummary = [
@@ -990,7 +1002,11 @@
     try {
       const res = await fetch("/summarize", {
         method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ text: lastResult.text, title: lastResult.title }),
+        // With a saved source the server reads the stored transcript (renamed speakers
+        // included) and keeps the summary with it.
+        body: JSON.stringify(lastResult.source_id
+          ? { source_id: lastResult.source_id }
+          : { text: lastResult.text, title: lastResult.title }),
       });
       const started = await res.json();
       if (!res.ok) {
@@ -1096,6 +1112,7 @@
     recReady.classList.remove("show");
     recordedChunks = [];
     recordingBlob = null;
+    recSourceId = null;
 
     if (inDesktopApp) {
       // ── Desktop mode: record everything via Python (no screen share needed) ──
@@ -1219,6 +1236,7 @@
         return;
       }
       recordingBlob = await res.blob();
+      recSourceId = res.headers.get("X-Source-Id");
       const channelErrors = JSON.parse(res.headers.get("X-Recording-Errors") || "{}");
       const missing = Object.entries(channelErrors).map(([n, e]) => `${CHANNEL_LABELS[n] || n}: ${e}`);
       recStatus.className = missing.length ? "status error" : "status";
@@ -1247,6 +1265,8 @@
     a.click();
   });
 
+  let recSourceId = null;   // saved source of the latest desktop recording
+
   recTranscribeBtn.addEventListener("click", async () => {
     if (!recordingBlob) return;
     recTranscribeBtn.disabled = true;
@@ -1255,7 +1275,8 @@
     hideProgress();
     const file = new File([recordingBlob], recordingFileName(), { type: recordingBlob.type || "audio/webm" });
     try {
-      await runTranscription(file, recStatus);
+      // Desktop recordings are already saved: transcribe the stored audio, don't upload it again.
+      await runTranscription(file, recStatus, recSourceId);
     } catch (err) {
       hideProgress();
       recStatus.className = "status error";

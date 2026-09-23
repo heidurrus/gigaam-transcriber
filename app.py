@@ -1,9 +1,10 @@
 import json
 import os
+import shutil
 import subprocess
 import sys
-import tempfile
 import threading
+import time
 import urllib.request
 import warnings
 
@@ -26,6 +27,7 @@ from core.macos_permissions import microphone_access
 from core.realtime import realtime
 from core.recorder import SAMPLE_RATE as REC_SAMPLE_RATE, DualChannelRecorder, mix_wavs, wav_peak
 from core.security import install_local_only_guard
+from core.store import Store, StoreError
 from core.transcripts import (MAX_BYTES as MAX_TRANSCRIPT_BYTES, TranscriptError,
                               is_transcript_file, parse_transcript)
 
@@ -57,6 +59,7 @@ _diarization_pipeline = None
 _diarization_lock = threading.Lock()
 
 jobs = JobStore()
+library = Store()  # projects, sources, transcripts, summaries (spec increment 1)
 transcription_queue = SerialQueue()  # one transcription at a time (spec D-12)
 
 _recorder = None
@@ -203,11 +206,13 @@ def do_longform(model, audio_path):
     return {"text": full_text, "segments": result_segments}, None
 
 
-def run_job(job_id, upload_path, audio_path, model_name, diarize, word_timestamps, device):
-    """Queue and run one transcription, then delete its temp files.
+def run_job(job_id, upload_path, audio_path, model_name, diarize, word_timestamps, device,
+            source_id=None):
+    """Queue and run one transcription.
 
-    upload_path is the file as uploaded; audio_path is what GigaAM reads (the
-    same file, or its ffmpeg-converted WAV). Both are removed afterwards.
+    With a source_id the files belong to a saved source and are kept; the result
+    is stored in the library. Without one (legacy temp uploads) both files are
+    deleted afterwards.
     """
     def on_wait(ahead):
         set_progress(job_id, 0, f"Queued — waiting for {ahead} job(s) to finish…")
@@ -222,12 +227,22 @@ def run_job(job_id, upload_path, audio_path, model_name, diarize, word_timestamp
     except Exception as e:
         error = e
     finally:
-        for path in {upload_path, audio_path}:
-            try:
-                os.unlink(path)
-            except OSError:
-                pass
-    # Report completion only after cleanup, so "done" means nothing is left behind.
+        if source_id is None:
+            for path in {upload_path, audio_path}:
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
+    if source_id is not None:
+        try:
+            if error is not None:
+                library.fail_source(source_id, error)
+            else:
+                library.save_transcript(source_id, result, asr_model=model_name)
+                result = {**result, "source_id": source_id}
+        except Exception as e:  # never lose the job result because saving failed
+            error = error or e
+    # Report completion only after cleanup and saving, so "done" means it's all in place.
     if error is not None:
         jobs.fail(job_id, error)
     else:
@@ -442,9 +457,19 @@ def desktop_record_stop():
     playback_path = captured[0] if len(captured) == 1 else mix_wavs(
         captured, os.path.join(result["folder"], "mixed.wav"))
 
+    # Keep the recording as a source in the current project (files move into its folder).
+    source = library.create_source(library.current_project()["id"], "recording",
+                                   "Recording " + time.strftime("%d.%m.%Y %H:%M"), status="recorded")
+    for name in os.listdir(result["folder"]):
+        library.attach_file(source, os.path.join(result["folder"], name), name, move=True)
+    shutil.rmtree(result["folder"], ignore_errors=True)
+    playback_path = os.path.join(library.source_dir(source), os.path.basename(playback_path))
+    library.update_source(source["id"], audit=False, audio_file=os.path.basename(playback_path))
+
     response = send_file(playback_path, mimetype="audio/wav", as_attachment=False,
                          download_name="recording.wav")
     response.headers["X-Recording-Id"] = result["recording_id"]
+    response.headers["X-Source-Id"] = source["id"]
     response.headers["X-Recording-Errors"] = json.dumps(result["errors"])
     return response
 
@@ -516,7 +541,7 @@ def ollama_status():
     return jsonify({"reachable": ollama_reachable()})
 
 
-def _run_summary(job_id, text, title, prefs, api_key):
+def _run_summary(job_id, text, title, prefs, api_key, source_id=None):
     try:
         result = summarize(text, prefs, api_key, OLLAMA_URL,
                            on_delta=lambda piece: jobs.append_partial(job_id, piece), title=title)
@@ -526,87 +551,130 @@ def _run_summary(job_id, text, title, prefs, api_key):
         jobs.fail(job_id, f"Summary failed: {e}")
     else:
         model = prefs["ollama_model"] if prefs["llm_provider"] == "ollama" else prefs["claude_model"]
-        jobs.finish(job_id, {"summary": result, "provider": prefs["llm_provider"], "model": model})
+        if source_id:
+            library.add_summary(source_id, prefs["llm_provider"], model, result)
+        jobs.finish(job_id, {"summary": result, "provider": prefs["llm_provider"], "model": model,
+                             "source_id": source_id})
 
 
 @app.route("/summarize", methods=["POST"])
 def summarize_route():
     """Summarise transcript text with the provider chosen in Settings (streams into the job)."""
     data = request.get_json(silent=True) or {}
-    text = (data.get("text") or "").strip()
+    source_id, title = data.get("source_id"), data.get("title")
+    project = None
+    if source_id:
+        try:
+            source = library.get_source(source_id)
+        except StoreError as e:
+            return jsonify({"error": str(e)}), 404
+        project = library.get_project(source["project_id"])
+        title = title or source["title"]
+        text = library.transcript_text(source_id)   # renamed speakers included
+    else:
+        text = (data.get("text") or "").strip()
     if not text:
         return jsonify({"error": "There is no transcript text to summarise."}), 400
     prefs = settings.load_settings()
+    if project and project["local_only"]:
+        # "Local only" project: nothing may go to a cloud model (spec FR-PRJ-05, D-02).
+        prefs = {**prefs, "llm_provider": "ollama"}
     api_key = settings.secret("ANTHROPIC_API_KEY")
     if prefs["llm_provider"] == "claude" and not api_key:
         return jsonify({"error": "Add your Anthropic API key in Settings, or choose a local model.",
                         "needs_setup": True}), 400
     job_id = jobs.create()
     jobs.set_progress(job_id, 0, "Writing summary…")
-    threading.Thread(target=_run_summary, args=(job_id, text, data.get("title"), prefs, api_key),
+    threading.Thread(target=_run_summary, args=(job_id, text, title, prefs, api_key, source_id),
                      daemon=True).start()
     return jsonify({"job_id": job_id})
 
 
+def _request_project():
+    """Project named in the request (form or JSON), else the current one."""
+    data = request.get_json(silent=True) if request.is_json else None
+    pid = (data or {}).get("project_id") or request.form.get("project_id")
+    return library.get_project(pid) if pid else library.current_project()
+
+
+def _transcription_options(values):
+    """Validate model / device / flags from a form or JSON body; returns (options, error)."""
+    model_name = values.get("model", "v3_e2e_rnnt")
+    if model_name not in AVAILABLE_MODELS:
+        return None, f"Unknown model: {model_name}"
+    device = values.get("device", "cpu")
+    if device == "cuda" and not CUDA_AVAILABLE:
+        return None, "GPU requested but CUDA is not available. Install PyTorch with CUDA support — see README."
+    if device == "mps" and not MPS_AVAILABLE:
+        return None, "MPS requested but Apple Silicon GPU is not available."
+    flag = lambda k: str(values.get(k, "false")).lower() == "true"  # noqa: E731
+    return dict(model_name=model_name, diarize=flag("diarize"), word_timestamps=flag("word_timestamps"),
+                device=device), None
+
+
+def _start_transcription(source, audio_path, opts):
+    job_id = jobs.create()
+    threading.Thread(target=run_job, daemon=True, args=(
+        job_id, audio_path, audio_path, opts["model_name"], opts["diarize"], opts["word_timestamps"],
+        opts["device"], source["id"])).start()
+    return job_id
+
+
 @app.route("/transcribe", methods=["POST"])
 def transcribe():
+    """Upload audio/video to transcribe, or a transcript to import. Always saved as a source."""
     if "audio" not in request.files:
         return jsonify({"error": "No audio file provided"}), 400
+    try:
+        project = _request_project()
+    except StoreError as e:
+        return jsonify({"error": str(e)}), 400
 
     upload = request.files["audio"]
-    if is_transcript_file(upload.filename):
-        # A ready-made transcript (Teams/Zoom .vtt, .srt, .docx, .txt…) skips
+    filename = os.path.basename(upload.filename or "upload")
+    title = os.path.splitext(filename)[0] or filename
+    if is_transcript_file(filename):
+        # A ready-made transcript (Teams/Zoom .vtt, .srt, .docx, .pdf, .txt…) skips
         # speech recognition entirely (spec FR-SRC-03 AC2).
+        data = upload.read(MAX_TRANSCRIPT_BYTES + 1)
         try:
-            result = parse_transcript(upload.filename, upload.read(MAX_TRANSCRIPT_BYTES + 1))
+            result = parse_transcript(filename, data)
         except TranscriptError as e:
             return jsonify({"error": f"Could not read this transcript: {e}"}), 400
+        source = library.create_source(project["id"], "transcript", title, original_filename=filename)
+        with open(os.path.join(library.source_dir(source), filename), "wb") as f:
+            f.write(data)
+        library.save_transcript(source["id"], result)
         job_id = jobs.create()
-        jobs.finish(job_id, result)
-        return jsonify({"job_id": job_id})
+        jobs.finish(job_id, {**result, "source_id": source["id"]})
+        return jsonify({"job_id": job_id, "source_id": source["id"]})
 
-    model_name = request.form.get("model", "v3_e2e_rnnt")
-    word_timestamps = request.form.get("word_timestamps", "false").lower() == "true"
-    diarize = request.form.get("diarize", "false").lower() == "true"
-    device = request.form.get("device", "cpu")
-
-    if model_name not in AVAILABLE_MODELS:
-        return jsonify({"error": f"Unknown model: {model_name}"}), 400
-
-    if device == "cuda" and not CUDA_AVAILABLE:
-        return jsonify({"error": "GPU requested but CUDA is not available. Install PyTorch with CUDA support — see README."}), 400
-
-    if device == "mps" and not MPS_AVAILABLE:
-        return jsonify({"error": "MPS requested but Apple Silicon GPU is not available."}), 400
-
-    audio_file = request.files["audio"]
-    suffix = os.path.splitext(audio_file.filename)[1].lower() or ".wav"
+    opts, error = _transcription_options(request.form)
+    if error:
+        return jsonify({"error": error}), 400
+    suffix = os.path.splitext(filename)[1].lower() or ".wav"
     if suffix not in AUDIO_VIDEO_EXTENSIONS:
-        return jsonify({"error": f"{audio_file.filename}: unsupported file type. Use audio or video "
+        return jsonify({"error": f"{filename}: unsupported file type. Use audio or video "
                         "(WAV, MP3, M4A, WebM, MP4…) or a transcript (.vtt, .srt, .docx, .pdf, .txt)."}), 400
 
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp_path = tmp.name
-        audio_file.save(tmp_path)
-
+    kind = "recording" if request.form.get("kind") == "recording" else "audio"
+    source = library.create_source(project["id"], kind, title, original_filename=filename,
+                                   asr_model=opts["model_name"])
+    original = os.path.join(library.source_dir(source), "original" + suffix)
+    upload.save(original)
     if suffix in NEEDS_CONVERSION:
         try:
-            audio_path = convert_to_wav(tmp_path)
+            converted = convert_to_wav(original)
+            audio_path = os.path.join(library.source_dir(source), "audio.wav")
+            os.replace(converted, audio_path)
         except Exception as e:
-            os.unlink(tmp_path)
-            return jsonify({"error": str(e)}), 500
+            library.fail_source(source["id"], e)
+            return jsonify({"error": str(e), "source_id": source["id"]}), 500
     else:
-        audio_path = tmp_path
-
-    job_id = jobs.create()
-    t = threading.Thread(
-        target=run_job,
-        args=(job_id, tmp_path, audio_path, model_name, diarize, word_timestamps, device),
-        daemon=True,
-    )
-    t.start()
-
-    return jsonify({"job_id": job_id})
+        audio_path = original
+    library.update_source(source["id"], audit=False, audio_file=os.path.basename(audio_path))
+    job_id = _start_transcription(source, audio_path, opts)
+    return jsonify({"job_id": job_id, "source_id": source["id"]})
 
 
 @app.route("/job/<job_id>")
@@ -615,6 +683,123 @@ def job_status(job_id):
     if job is None:
         return jsonify({"error": "Job not found"}), 404
     return jsonify(job)
+
+
+# ── Library API (projects, sources) ──────────────────────────────────────────
+
+def _store_call(fn, *args, **kwargs):
+    try:
+        return jsonify(fn(*args, **kwargs)), 200
+    except StoreError as e:
+        status = 404 if "not found" in str(e) else 400
+        return jsonify({"error": str(e)}), status
+
+
+@app.route("/api/projects", methods=["GET"])
+def api_projects():
+    include_archived = request.args.get("archived") == "1"
+    current = library.current_project()
+    return jsonify({"projects": library.list_projects(include_archived), "current_project_id": current["id"]})
+
+
+@app.route("/api/projects", methods=["POST"])
+def api_create_project():
+    data = request.get_json(silent=True) or {}
+    return _store_call(library.create_project, data.get("name"), bool(data.get("local_only")))
+
+
+@app.route("/api/projects/<project_id>", methods=["PATCH"])
+def api_update_project(project_id):
+    data = request.get_json(silent=True) or {}
+    return _store_call(library.update_project, project_id,
+                       **{k: data[k] for k in ("name", "local_only", "archived") if k in data})
+
+
+@app.route("/api/projects/<project_id>/current", methods=["POST"])
+def api_switch_project(project_id):
+    return _store_call(library.set_current_project, project_id)
+
+
+@app.route("/api/projects/<project_id>/sources", methods=["GET"])
+def api_sources(project_id):
+    try:
+        library.get_project(project_id)
+    except StoreError as e:
+        return jsonify({"error": str(e)}), 404
+    return jsonify({"sources": library.list_sources(project_id)})
+
+
+@app.route("/api/sources/<source_id>", methods=["GET"])
+def api_source(source_id):
+    try:
+        source = library.get_source(source_id)
+    except StoreError as e:
+        return jsonify({"error": str(e)}), 404
+    segments, speaker_names = library.transcript(source_id)
+    return jsonify({**source, "segments": segments, "speaker_names": speaker_names,
+                    "text": library.transcript_text(source_id) if segments else "",
+                    "summary": library.latest_summary(source_id),
+                    "audio_url": f"/api/sources/{source_id}/audio" if source.get("audio_file") else None})
+
+
+@app.route("/api/sources/<source_id>", methods=["PATCH"])
+def api_update_source(source_id):
+    data = request.get_json(silent=True) or {}
+    if set(data) - {"title"}:
+        return jsonify({"error": "only the title can be changed here"}), 400
+    return _store_call(library.update_source, source_id, **data)
+
+
+@app.route("/api/sources/<source_id>", methods=["DELETE"])
+def api_delete_source(source_id):
+    return _store_call(lambda: (library.delete_source(source_id), {"ok": True})[1])
+
+
+@app.route("/api/sources/<source_id>/restore", methods=["POST"])
+def api_restore_source(source_id):
+    return _store_call(lambda: (library.restore_source(source_id), {"ok": True})[1])
+
+
+@app.route("/api/sources/<source_id>/speakers/<path:label>", methods=["PUT"])
+def api_rename_speaker(source_id, label):
+    data = request.get_json(silent=True) or {}
+    return _store_call(lambda: (library.rename_speaker(source_id, label, data.get("name")),
+                                {"ok": True, "speaker_names": library.transcript(source_id)[1]})[1])
+
+
+@app.route("/api/sources/<source_id>/audio")
+def api_source_audio(source_id):
+    try:
+        source = library.get_source(source_id)
+    except StoreError as e:
+        return jsonify({"error": str(e)}), 404
+    if not source.get("audio_file"):
+        return jsonify({"error": "this source has no audio"}), 404
+    # conditional=True answers Range requests, so the player can seek.
+    return send_file(os.path.join(library.source_dir(source), source["audio_file"]), conditional=True)
+
+
+@app.route("/api/sources/<source_id>/transcribe", methods=["POST"])
+def api_transcribe_source(source_id):
+    """(Re)transcribe a saved source's audio, e.g. a recording after Stop."""
+    try:
+        source = library.get_source(source_id)
+    except StoreError as e:
+        return jsonify({"error": str(e)}), 404
+    if not source.get("audio_file"):
+        return jsonify({"error": "this source has no audio to transcribe"}), 400
+    opts, error = _transcription_options(request.get_json(silent=True) or {})
+    if error:
+        return jsonify({"error": error}), 400
+    library.update_source(source_id, status="processing", asr_model=opts["model_name"], error=None)
+    job_id = _start_transcription(source, os.path.join(library.source_dir(source), source["audio_file"]), opts)
+    return jsonify({"job_id": job_id, "source_id": source_id})
+
+
+@app.route("/api/audit")
+def api_audit():
+    return jsonify({"entries": library.audit(request.args.get("entity"), request.args.get("entity_id"),
+                                             min(int(request.args.get("limit", 200)), 1000))})
 
 
 if __name__ == "__main__":
