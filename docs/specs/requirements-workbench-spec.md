@@ -970,7 +970,7 @@ Development starts from `heidurrus/gigaam-transcriber` (commit `74d3289`). `[CON
 | # | Increment | Content | Value | Status |
 |---|---|---|---|---|
 | 0 | Harden the baseline + platform foundation | Loopback-only binding, stream recording to disk, show recorder errors, clean up jobs, UI env checks; **embedded runtime + first-run Setup screen + startup dependency check on Windows and macOS; macOS `.app` packaging; spike for macOS system-audio capture** | Installs and runs as a desktop app on both OSes with zero manual setup | ✅ Implemented in 1.1.0/1.1.1, published as release v2.0 (2026-09-23); app renamed to Requirements Workbench |
-| 1 | Source library | Projects, persistence, sources list (S01), stored transcript viewer with playback (S02), baseline features kept (gap #19), RU/EN i18n | The transcriber becomes a workspace | ⏳ Next |
+| 1 | Source library | Projects, persistence, sources list (S01), stored transcript viewer with playback (S02), baseline features kept (gap #19), RU/EN i18n | The transcriber becomes a workspace | 🟡 2.2.0: projects + Local only, persistence (team-ready SQLite, audit log), sources list, transcript viewer with playback / click-to-seek / speaker rename, RU+EN UI (Svelte, D-03). Remaining: email and earlier-spec import |
 | 2 | Atoms | LLM gateway, `extract-requirements` skill, extraction with chunk progress, review UI (S03), dedup, conflicts, open questions | First BA value | Planned |
 | 3 | FRD | Builder, versions, provenance, stale sections, quality check, DOCX, custom skills (S04, S07 skills) | A document to hand over | Planned |
 | 4 | Backlog & Jira | Decomposition, INVEST, Atlassian Remote MCP connection (OAuth), dry-run preview, idempotent deterministic push (S05, S06) | End-to-end pipeline | Planned |

@@ -13,3 +13,4 @@ installer/Output/
 build/
 packaging/.cache/
 .DS_Store
+frontend/node_modules/

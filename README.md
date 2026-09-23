@@ -34,7 +34,7 @@ Full requirements: [`docs/specs/requirements-workbench-spec.md`](docs/specs/requ
 | # | Increment | What you get | Status |
 |---|---|---|---|
 | 0 | **Stable base** | Installers with no prerequisites and automatic setup, native app on Windows and macOS, call recording with separate mic/system channels (incl. macOS system audio), local-only server | ✅ **v2.0** |
-| 1 | Source library | Projects, everything saved locally, sources list, transcript viewer with playback, Russian + English UI | ⏳ next |
+| 1 | Source library | Projects, everything saved locally, sources list, transcript viewer with playback, Russian + English UI | 🟡 **2.2.0**: projects, library, new UI; emails and earlier specs next |
 | 2 | Atoms | AI extraction of requirement atoms with source quotes, review (accept / edit / reject, keyboard), duplicates, conflicts between sources, open questions | planned |
 | 3 | FRD | Document built from accepted atoms, versions and diff, stale-section detection, quality check, DOCX export (neutral or GOST template) | planned |
 | 4 | Backlog & Jira | Epics / stories / acceptance criteria, INVEST check, dry-run preview and push to Jira Cloud through the Atlassian MCP | planned |
@@ -181,8 +181,18 @@ CI runs the tests on Windows, macOS and Linux, and builds both installers on eve
 `master`. Pushing a tag `vX.Y.Z` publishes them as a GitHub release.
 
 **Layout:** `launcher.py` (entry point, setup → app handoff) · `boot.py` (bundled-Python
-first stage) · `app.py` (Flask app) · `core/` (recorder, jobs, setup, security, platform
-audio) · `static/` (UI) · `packaging/`, `installer/` (builds) · `docs/` (spec, interview brief, prototype).
+first stage) · `app.py` (Flask app + API) · `core/` (store, recorder, jobs, setup, security,
+platform audio, summaries) · `frontend/` (Svelte UI, built into `static/app` and committed) ·
+`static/` (setup screen, classic page) · `packaging/`, `installer/` (builds) · `docs/` (spec, brief, prototype).
+
+**UI development:**
+
+```bash
+cd frontend && npm install
+npm run dev             # hot reload against a running app (WORKBENCH_PORT, default 47823)
+npm run build           # writes static/app; commit the result
+node e2e/smoke.mjs URL  # end-to-end smoke test with your installed Chrome
+```
 
 ---
 

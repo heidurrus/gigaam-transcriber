@@ -265,3 +265,20 @@ def test_completely_silent_system_audio_gets_a_hint(client, app_module, monkeypa
     assert wait_for(lambda: client.get("/desktop-record/status").get_json()["channels"]["sys"]["frames"] == 3072)
     res = client.post("/desktop-record/stop")
     assert "Screen & System Audio Recording" in json.loads(res.headers["X-Recording-Errors"])["sys"]
+
+
+def test_new_app_is_served_at_root_and_classic_page_remains(client):
+    root = client.get("/")
+    assert root.status_code == 200 and b'id="app"' in root.data and b"/static/app/assets/" in root.data
+    asset = root.data.decode().split('src="')[1].split('"')[0]
+    assert client.get(asset).status_code == 200
+    classic = client.get("/classic")
+    assert classic.status_code == 200 and b"drop-zone" in classic.data
+
+
+def test_recording_gets_the_title_the_ui_sends(client, app_module, monkeypatch):
+    _use_fake_sources(app_module, monkeypatch, tone_source(3, 2), tone_source(4, 2))
+    client.post("/desktop-record/start", json={})
+    assert wait_for(lambda: client.get("/desktop-record/status").get_json()["channels"]["mic"]["frames"] == 2048)
+    res = client.post("/desktop-record/stop", json={"title": "Запись 23.09.2026, 10:15"})
+    assert app_module.library.get_source(res.headers["X-Source-Id"])["title"] == "Запись 23.09.2026, 10:15"

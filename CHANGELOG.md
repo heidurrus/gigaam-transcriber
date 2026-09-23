@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.2.0 (2026-09-23): Increment 1, source library (part 1)
+
+- **Everything is saved.** Recordings, uploaded audio, imported transcripts and summaries
+  are kept in a local library per project, with their files. Close the app and it's all
+  still there. Deleting is recoverable (Undo).
+- **Projects.** Create and switch projects from the top of the left rail, rename or
+  archive them in Settings. **Local only** per project: its summaries always use the local
+  model, never the cloud.
+- **New multi-screen interface** (the prototype's layout, Russian by default, English in
+  Settings):
+  - **Sources**: record or upload, live progress, the list of everything saved, with
+    status, duration and speakers; rename and delete in place.
+  - **Transcript**: audio player; click a timestamp to jump there, and the playing line is
+    highlighted. Rename speakers once and the name appears everywhere, including the
+    summary. Summary alongside, copy, download .txt, transcribe again.
+  - **Settings**: a full screen for the project, AI summaries, speaker separation,
+    language and environment status.
+  - Steps 3–6 (Atoms, Document, Decomposition, Export) are shown as "later".
+  - The previous single page is still at `/classic` while the new one settles.
+- Recordings are named in the interface language; Russian plurals are correct everywhere.
+- Fixed: project names differing only in Cyrillic letter case counted as different.
+
 ## 2.1.0 (2026-09-23)
 
 - **Redesigned interface.**

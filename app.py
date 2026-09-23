@@ -304,7 +304,16 @@ def _transcribe(job_id, audio_path, model_name, diarize, word_timestamps, device
 
 @app.route("/")
 def index():
-    return send_from_directory("static", "index.html")
+    """The multi-screen app (frontend/, built into static/app)."""
+    if os.path.exists(os.path.join(app.static_folder, "app", "index.html")):
+        return send_from_directory(os.path.join(app.static_folder, "app"), "index.html")
+    return send_from_directory(app.static_folder, "index.html")
+
+
+@app.route("/classic")
+def classic():
+    """The previous single-page UI, kept as a fallback while the new one settles."""
+    return send_from_directory(app.static_folder, "index.html")
 
 
 @app.route("/models")
@@ -458,8 +467,9 @@ def desktop_record_stop():
         captured, os.path.join(result["folder"], "mixed.wav"))
 
     # Keep the recording as a source in the current project (files move into its folder).
+    title = ((request.get_json(silent=True) or {}).get("title") or "").strip()  # localised by the UI
     source = library.create_source(library.current_project()["id"], "recording",
-                                   "Recording " + time.strftime("%d.%m.%Y %H:%M"), status="recorded")
+                                   title or "Recording " + time.strftime("%d.%m.%Y %H:%M"), status="recorded")
     for name in os.listdir(result["folder"]):
         library.attach_file(source, os.path.join(result["folder"], name), name, move=True)
     shutil.rmtree(result["folder"], ignore_errors=True)
