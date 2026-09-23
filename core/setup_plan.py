@@ -18,7 +18,7 @@ from typing import Callable, Optional
 
 from core.ffmpeg import find_ffmpeg
 from core.hardware import torch_variant
-from core.paths import app_data_dir
+from core.paths import app_data_dir, models_dir
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REQUIREMENTS_FILE = os.path.join(ROOT, "requirements.txt")
@@ -62,12 +62,28 @@ def _version_tuple(v):
 _REQ_RE = re.compile(r"^\s*([A-Za-z0-9_.\-]+)(?:\[[^\]]*\])?\s*(?:(>=|==)\s*([\w.]+))?")
 
 
-def parse_requirements(path):
+_MARKER_RE = re.compile(r"""^\s*sys_platform\s*(==|!=)\s*["']([^"']+)["']\s*$""")
+
+
+def marker_applies(marker, platform=None):
+    """Evaluate the simple `sys_platform == "darwin"` markers used in requirements.txt."""
+    platform = platform or sys.platform
+    m = _MARKER_RE.match(marker)
+    if not m:
+        raise ValueError(f"unsupported requirement marker: {marker!r}")
+    return (platform == m.group(2)) == (m.group(1) == "==")
+
+
+def parse_requirements(path, platform=None):
     reqs = []
     with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.split("#", 1)[0].strip()
             if not line or line.startswith("-"):
+                continue
+            line, _, marker = line.partition(";")
+            line = line.strip()
+            if marker.strip() and not marker_applies(marker.strip(), platform):
                 continue
             m = _REQ_RE.match(line)
             if m:
@@ -184,7 +200,9 @@ def build_plan(hw, installer=None, state=None, hf_token_set=lambda: bool(os.gete
 
     def download_model(log):
         log(f"Downloading speech model {DEFAULT_ASR_MODEL} (~500 MB, once)…")
-        run_streaming([python, "-c", f"import gigaam; gigaam.load_model({DEFAULT_ASR_MODEL!r}); print('model ready')"], log)
+        root = models_dir("gigaam")
+        run_streaming([python, "-c", f"import gigaam; gigaam.load_model({DEFAULT_ASR_MODEL!r}, "
+                                     f"download_root={root!r}); print('model ready')"], log)
         state.set(f"model:{DEFAULT_ASR_MODEL}")
 
     return [

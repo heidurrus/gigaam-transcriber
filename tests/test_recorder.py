@@ -90,7 +90,8 @@ def test_failing_channel_reports_error_and_other_channel_survives(tmp_path):
         "sys": failing_source("loopback device disappeared", after_chunks=2),
     })
     rec.start()
-    assert wait_for(lambda: rec.status()["channels"]["sys"]["error"] is not None)
+    assert wait_for(lambda: rec.status()["channels"]["sys"]["error"] is not None
+                    and rec.status()["channels"]["mic"]["frames"] == 4 * CHUNK)
     status = rec.status()
     assert status["recording"] is True
     assert status["channels"]["sys"]["error"] == "loopback device disappeared"

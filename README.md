@@ -17,20 +17,44 @@ A local web app for transcribing audio using [GigaAM](https://github.com/salute-
 
 ---
 
-## Quick Install (Windows)
+## Install
 
-The easiest way to get started on Windows is the one-click installer.
+Nothing needs to be installed first: Python is bundled, and the app installs
+everything else itself on first launch (Setup screen with progress).
 
-1. Make sure [Python 3.10+](https://www.python.org/downloads/) is installed and checked **"Add Python to PATH"** during setup
-2. Download **GigaAM-Transcriber-Setup.exe** from the [Releases](https://github.com/heidurrus/gigaam-transcriber/releases) page
-3. Run the installer — it will install all Python dependencies automatically
-4. Launch from the desktop shortcut or Start Menu
+### Windows 10/11 (x64)
 
-> The installer does not bundle model weights. They download from HuggingFace (~500MB) on first transcription and are cached locally after that.
+1. Download **GigaAM-Transcriber-<version>-Setup.exe** from
+   [Releases](https://github.com/heidurrus/gigaam-transcriber/releases)
+   (or from the latest *build installers* run under Actions → Artifacts)
+2. Run it: no admin rights needed. It installs the Microsoft WebView2 runtime if your PC lacks it
+3. The app opens and finishes setup (PyTorch — the CUDA build if you have an NVIDIA GPU —,
+   GigaAM, ffmpeg and the speech model, a few minutes on the first run only)
+
+### macOS 13+ (Apple Silicon)
+
+1. Download **GigaAM-Transcriber-<version>-macos-arm64.dmg** and drag the app to Applications
+2. First open: builds are not notarized yet, so **right-click the app → Open → Open**
+   (only needed once)
+3. The app opens and finishes setup (same as on Windows, using the Apple GPU)
+
+Downloaded components and models live in your user folder
+(`%LOCALAPPDATA%\RequirementsWorkbench` / `~/Library/Application Support/RequirementsWorkbench`),
+never inside the app, so updating or reinstalling keeps them.
+
+### Building the installers yourself
+
+```bash
+python3 packaging/build.py --target macos-arm64   # on a Mac   → dist/*.dmg
+python  packaging/build.py --target windows-x64   # on Windows → dist/*-Setup.exe (needs Inno Setup 6)
+```
+
+CI builds both on every push to `master` (*build installers* workflow); pushing a tag
+`vX.Y.Z` publishes them as a GitHub release.
 
 ---
 
-## Manual Setup (macOS, Linux, or from source)
+## Running from source (development)
 
 You only need **Python 3.10+**. Everything else — PyTorch (the right build for
 your GPU), GigaAM, ffmpeg and the speech model — is installed automatically by
@@ -79,10 +103,10 @@ python3 launcher.py --browser  # optional: open in Chrome/Edge instead
 The server listens on `127.0.0.1:5000` only and never accepts connections from
 other machines. Starting the app a second time just shows the running one.
 
-**macOS note:** on first launch macOS asks for microphone permission. In the desktop
-window, system-audio capture on macOS isn't supported yet (it's planned). Use
-browser mode in Chrome to record call audio; Chrome needs Screen Recording permission
-(System Settings → Privacy & Security → Screen Recording).
+**macOS note:** on first recording macOS asks for microphone and "system audio
+recording" permission for the app — allow both. On macOS 14.2+ the desktop app
+records call audio itself (no browser, screen sharing or virtual audio driver
+needed). On macOS 13 use browser mode in Chrome for call audio.
 
 ### Development
 
@@ -132,7 +156,7 @@ Model weights download from HuggingFace on first use and are cached locally. Sub
 
 **Diarization is slow** — expected on CPU. A supported GPU is used automatically and is much faster.
 
-**macOS: call recorder doesn't capture system audio** — Safari and Firefox don't support `getDisplayMedia` with system audio. Use Chrome. When the screen-share dialog appears, check "Share system audio" (or "Share tab audio" if recording a specific tab).
+**macOS: recording has no call audio** — check System Settings → Privacy & Security → *Screen & System Audio Recording* and allow GigaAM Transcriber (macOS 14.2+). In browser mode, use Chrome and tick "Share system audio" in the share dialog.
 
 **macOS: "command not found: python"** — use `python3` instead, or create an alias: `alias python=python3`.
 

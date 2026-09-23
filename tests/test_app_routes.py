@@ -16,10 +16,56 @@ def test_health_reports_environment(client, app_module, monkeypatch):
     assert body["gpu"] == {"cuda": False, "gpu_name": None, "mps": False}
 
 
-def test_macos_system_audio_is_reported_unavailable(app_module, monkeypatch):
+def test_old_macos_explains_why_system_audio_is_unavailable(app_module, monkeypatch):
     monkeypatch.setattr(app_module.sys, "platform", "darwin")
-    reason = app_module._system_source()
-    assert isinstance(reason, str) and "macOS" in reason
+    monkeypatch.setattr(app_module.macos_audio, "support", lambda: (False, "needs macOS 14.2 or newer"))
+    assert app_module._system_source() == "needs macOS 14.2 or newer"
+    assert app_module.system_audio_support() == (False, "needs macOS 14.2 or newer")
+
+
+def test_macos_uses_core_audio_tap_and_closes_it_after_recording(client, app_module, monkeypatch):
+    events = []
+
+    class FakeTap:
+        def open(self):
+            events.append("open")
+            return self
+
+        def __call__(self, stop):
+            yield from tone_source(500, 2)(stop)
+
+        def close(self):
+            events.append("close")
+
+    monkeypatch.setattr(app_module.sys, "platform", "darwin")
+    monkeypatch.setattr(app_module.macos_audio, "support", lambda: (True, None))
+    monkeypatch.setattr(app_module.macos_audio, "SystemAudioTap", FakeTap)
+    monkeypatch.setattr(app_module, "_mic_source", lambda idx: tone_source(1, 2))
+    monkeypatch.setattr(app_module, "_recorder", None)
+
+    assert client.post("/desktop-record/start", json={}).status_code == 200
+    assert events == ["open"], "tap must be opened before recording starts"
+    assert wait_for(lambda: client.get("/desktop-record/status").get_json()["channels"]["sys"]["frames"] == 2048)
+    res = client.post("/desktop-record/stop")
+    assert res.status_code == 200 and json.loads(res.headers["X-Recording-Errors"]) == {}
+    assert events == ["open", "close"]
+
+
+def test_macos_tap_failure_is_reported_not_fatal(client, app_module, monkeypatch):
+    class BrokenTap:
+        def open(self):
+            raise OSError("permission denied")
+
+    monkeypatch.setattr(app_module.sys, "platform", "darwin")
+    monkeypatch.setattr(app_module.macos_audio, "support", lambda: (True, None))
+    monkeypatch.setattr(app_module.macos_audio, "SystemAudioTap", BrokenTap)
+    monkeypatch.setattr(app_module, "_mic_source", lambda idx: tone_source(1, 2))
+    monkeypatch.setattr(app_module, "_recorder", None)
+    assert client.post("/desktop-record/start", json={}).status_code == 200
+    status = client.get("/desktop-record/status").get_json()
+    assert "permission denied" in status["channels"]["sys"]["error"]
+    time.sleep(0.05)
+    assert client.post("/desktop-record/stop").status_code == 200  # mic-only recording still saved
 
 
 def _use_fake_sources(app_module, monkeypatch, mic, sys_):
