@@ -101,3 +101,20 @@ def test_continue_is_refused_before_setup_finishes():
         assert get(slot, "/setup/continue", "POST")[0] == 409
     finally:
         slot.stop()
+
+
+def test_join_survives_the_setup_to_app_handoff():
+    """Regression: browser mode exited when setup handed over to the app, because
+    join() returned in the moment between stopping one server and starting the next."""
+    import threading
+    import time
+    slot = launcher.ServerSlot(port=0)
+    slot.serve(Flask("setup"))
+    returned = threading.Event()
+    threading.Thread(target=lambda: (slot.join(), returned.set()), daemon=True).start()
+    slot.stop()                      # handoff: old server gone…
+    time.sleep(0.7)                  # …longer than join's poll interval
+    assert not returned.is_set(), "join() must not return during a handoff"
+    slot.serve(Flask("main"))        # …new server up
+    slot.close()
+    assert returned.wait(2)

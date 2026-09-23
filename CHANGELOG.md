@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.1 (2026-09-23)
+
+- **Fixed: "Access to 127.0.0.1 was denied / HTTP ERROR 403" on startup.** The app used
+  port 5000, which the macOS AirPlay Receiver (and sometimes other software) already
+  uses. The app mistook it for an already-running copy of itself and showed that
+  server's error page. It now uses its own port (47823), falls back to any free port
+  when that's taken, and recognises a running copy only when it identifies itself.
+- **Fixed: in browser mode the app quit right after first-run setup** instead of
+  opening the app.
+- Closing or killing the app always cleans up its instance record.
+
 ## 1.1.0 — Increment 0: stable base (2026-09-23)
 
 First step from GigaAM Transcriber towards Requirements Workbench
@@ -54,4 +65,4 @@ Windows 10/11 PC (ideally with an NVIDIA GPU) and a Mac (Apple Silicon, macOS 14
 6. Unplug the mic mid-recording (or deny a permission) → the app says which channel failed
    and still saves the other one.
 7. Close and reopen the app → starts straight into the app (no setup), in a few seconds.
-8. From another device on your network, open `http://<your-PC-IP>:5000` → must not connect.
+8. From another device on your network, open `http://<your-PC-IP>:47823` → must not connect.
