@@ -12,7 +12,7 @@ import urllib.request
 
 import anthropic
 
-SYSTEM_PROMPT = """You summarise meeting and call transcripts for a business analyst who gathers requirements from clients.
+SYSTEM_PROMPT = """You summarise sources for a business analyst who gathers requirements from clients: call and meeting transcripts, emails, and documents such as earlier specifications. The first line tells you which kind it is.
 
 Write the whole summary, including the section headings, in the same language as the transcript (for a Russian transcript, translate the headings below into Russian). Use Markdown with these sections, leaving out any section that would be empty:
 
@@ -33,7 +33,7 @@ Anything left unresolved, contradictory, or "to discuss later".
 ## Action items
 Who does what, and by when if it was said.
 
-Refer to the source of each point with the speaker and timestamp in square brackets, e.g. [Anna, 12:30], when the transcript has them. Only state what the transcript supports; if something is unclear, say so rather than guessing."""
+Refer to the source of each point with the speaker and timestamp in square brackets, e.g. [Anna, 12:30], when the transcript has them; for an email, name the sender when it matters. Only state what the transcript supports; if something is unclear, say so rather than guessing."""
 
 CLAUDE_MAX_TOKENS = 32000
 FALLBACK_BETA = "server-side-fallback-2026-07-01"

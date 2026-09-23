@@ -47,8 +47,19 @@ export function renderMarkdown(md) {
   return html;
 }
 
-const TRANSCRIPT_EXTS = [".vtt", ".srt", ".txt", ".docx", ".pdf", ".json", ".md"];
+// Text sources: imported as-is, no speech recognition (transcripts, documents, emails).
+const TRANSCRIPT_EXTS = [".vtt", ".srt", ".txt", ".docx", ".pdf", ".json", ".md", ".eml", ".msg"];
 export const isTranscriptFile = name => TRANSCRIPT_EXTS.some(ext => (name || "").toLowerCase().endsWith(ext));
+
+// Readable default names for machine labels; a name the user gave always wins.
+export function speakerDisplay(label, name, t) {
+  if (name && name !== label) return name;
+  if (label === "BA") return t("spk.ba");
+  if (label === "OTHER") return t("spk.other");
+  const m = /^SPEAKER_(\d+)$/.exec(label || "");
+  if (m) return t("spk.n", { n: Number(m[1]) + 1 });
+  return label;
+}
 
 export function speakerClass(label, order) {
   const i = order.indexOf(label);

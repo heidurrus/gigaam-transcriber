@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.3.0 (2026-09-23): Increment 1 complete
+
+- **Recordings use their separate channels.** Your microphone is transcribed as **You (BA)**,
+  and the call audio as the other side (with speaker separation if it's on). Both are merged in
+  time order, so you never need speaker separation to tell yourself apart. Short clips get
+  accurate start times too.
+- **Emails as sources:** `.eml` and Outlook `.msg` (read without Outlook). Subject becomes the
+  title, and sender, recipients and date are shown; the body is shown as paragraphs.
+- **Documents as sources:** earlier specifications, notes (`.docx`, `.pdf`, `.txt`, `.md`)
+  without speakers or timestamps are kept as documents and shown as paragraphs, not as a
+  fake transcript.
+- Summaries know whether they're summarising a call, an email or a document.
+- Speakers show as "You (BA)", "Other side", "Speaker 1, 2…" until you rename them.
+- Libraries created by 2.2.0 are upgraded automatically.
+- Fixed: an email to several recipients lost its "To" field.
+
 ## 2.2.0 (2026-09-23): Increment 1, source library (part 1)
 
 - **Everything is saved.** Recordings, uploaded audio, imported transcripts and summaries

@@ -25,9 +25,11 @@ from core.jobs import JobStore, SerialQueue
 from core.paths import models_dir, recordings_dir, use_app_model_cache
 from core.macos_permissions import microphone_access
 from core.realtime import realtime
-from core.recorder import SAMPLE_RATE as REC_SAMPLE_RATE, DualChannelRecorder, mix_wavs, wav_peak
+from core.recorder import (SAMPLE_RATE as REC_SAMPLE_RATE, DualChannelRecorder, mix_wavs, speech_bounds,
+                           wav_duration, wav_peak)
 from core.security import install_local_only_guard
 from core.store import Store, StoreError
+from core.emails import EMAIL_EXTENSIONS, parse_email_file
 from core.transcripts import (MAX_BYTES as MAX_TRANSCRIPT_BYTES, TranscriptError,
                               is_transcript_file, parse_transcript)
 
@@ -207,7 +209,7 @@ def do_longform(model, audio_path):
 
 
 def run_job(job_id, upload_path, audio_path, model_name, diarize, word_timestamps, device,
-            source_id=None):
+            source_id=None, channels=None):
     """Queue and run one transcription.
 
     With a source_id the files belong to a saved source and are kept; the result
@@ -219,11 +221,9 @@ def run_job(job_id, upload_path, audio_path, model_name, diarize, word_timestamp
 
     result, error = None, None
     try:
-        result = transcription_queue.run(
-            job_id,
-            lambda: _transcribe(job_id, audio_path, model_name, diarize, word_timestamps, device),
-            on_wait=on_wait,
-        )
+        work = ((lambda: _transcribe_channels(job_id, *channels, model_name, diarize, device)) if channels
+                else (lambda: _transcribe(job_id, audio_path, model_name, diarize, word_timestamps, device)))
+        result = transcription_queue.run(job_id, work, on_wait=on_wait)
     except Exception as e:
         error = e
     finally:
@@ -247,6 +247,46 @@ def run_job(job_id, upload_path, audio_path, model_name, diarize, word_timestamp
         jobs.fail(job_id, error)
     else:
         jobs.finish(job_id, result)
+
+
+# Recordings keep the microphone (the BA) and system audio (everyone else) apart,
+# so the BA never needs diarization (spec D-11, FR-SRC-01 AC6).
+BA_LABEL, OTHER_LABEL = "BA", "OTHER"
+
+
+def _channel_segments(job_id, path, model_name, diarize, device, label):
+    result = _transcribe(job_id, path, model_name, diarize, False, device)
+    segments = result.get("segments")
+    if not segments:  # short audio comes back as plain text: one segment where the speech is
+        text = (result.get("text") or "").strip()
+        start, end = speech_bounds(path) or (0.0, round(wav_duration(path), 3))
+        segments = [{"start": start, "end": end, "text": text}] if text else []
+    out = []
+    for s in segments:
+        text = (s.get("text") or "").strip()
+        if text:
+            speaker = s.get("speaker") if diarize and s.get("speaker") else label
+            out.append({"speaker": speaker, "start": s.get("start"), "end": s.get("end"), "text": text})
+    return out
+
+
+def _transcribe_channels(job_id, mic_path, sys_path, model_name, diarize, device):
+    """Transcribe each recorded channel on its own and merge them in time order.
+
+    Mic segments are the BA; system-audio segments are diarized when asked (the
+    remote participants), otherwise labelled OTHER. A silent channel is skipped.
+    """
+    segments = []
+    if mic_path and os.path.exists(mic_path) and wav_peak(mic_path) > 0:
+        set_progress(job_id, 1, "Transcribing your microphone…")
+        segments += _channel_segments(job_id, mic_path, model_name, False, device, BA_LABEL)
+    if sys_path and os.path.exists(sys_path) and wav_peak(sys_path) > 0:
+        set_progress(job_id, 50, "Transcribing the other side of the call…")
+        segments += _channel_segments(job_id, sys_path, model_name, diarize, device, OTHER_LABEL)
+    segments.sort(key=lambda s: (s["start"] is None, s["start"] or 0.0))
+    text = "\n".join(f"[{s['speaker']}] [{gigaam.format_time(s['start'] or 0)} - "
+                     f"{gigaam.format_time(s['end'] or 0)}] {s['text']}" for s in segments)
+    return {"text": text, "segments": segments, "diarized": True, "channels": True}
 
 
 def _transcribe(job_id, audio_path, model_name, diarize, word_timestamps, device):
@@ -580,6 +620,8 @@ def summarize_route():
             return jsonify({"error": str(e)}), 404
         project = library.get_project(source["project_id"])
         title = title or source["title"]
+        kind_label = {"email": "Email", "document": "Document"}.get(source["kind"], "Call or meeting")
+        title = f"{kind_label} — {title}"
         text = library.transcript_text(source_id)   # renamed speakers included
     else:
         text = (data.get("text") or "").strip()
@@ -622,11 +664,20 @@ def _transcription_options(values):
                 device=device), None
 
 
+def _recorded_channels(source):
+    """(mic.wav, sys.wav) when a desktop recording kept both channels, else None."""
+    if source.get("kind") != "recording":
+        return None
+    folder = library.source_dir(source)
+    mic, sys_ = os.path.join(folder, "mic.wav"), os.path.join(folder, "sys.wav")
+    return (mic, sys_) if os.path.exists(mic) and os.path.exists(sys_) else None
+
+
 def _start_transcription(source, audio_path, opts):
     job_id = jobs.create()
     threading.Thread(target=run_job, daemon=True, args=(
         job_id, audio_path, audio_path, opts["model_name"], opts["diarize"], opts["word_timestamps"],
-        opts["device"], source["id"])).start()
+        opts["device"], source["id"], _recorded_channels(source))).start()
     return job_id
 
 
@@ -643,15 +694,23 @@ def transcribe():
     upload = request.files["audio"]
     filename = os.path.basename(upload.filename or "upload")
     title = os.path.splitext(filename)[0] or filename
-    if is_transcript_file(filename):
-        # A ready-made transcript (Teams/Zoom .vtt, .srt, .docx, .pdf, .txt…) skips
-        # speech recognition entirely (spec FR-SRC-03 AC2).
+    is_email = os.path.splitext(filename)[1].lower() in EMAIL_EXTENSIONS
+    if is_email or is_transcript_file(filename):
+        # Text sources skip speech recognition (spec FR-SRC-03 AC2): a ready-made
+        # transcript (Teams/Zoom .vtt, .srt, .docx, .pdf, .txt…), an email (.eml/.msg),
+        # or a document such as an earlier specification.
         data = upload.read(MAX_TRANSCRIPT_BYTES + 1)
         try:
-            result = parse_transcript(filename, data)
+            result = parse_email_file(filename, data) if is_email else parse_transcript(filename, data)
         except TranscriptError as e:
-            return jsonify({"error": f"Could not read this transcript: {e}"}), 400
-        source = library.create_source(project["id"], "transcript", title, original_filename=filename)
+            return jsonify({"error": f"Could not read this file: {e}"}), 400
+        if is_email:
+            kind, title = "email", result.get("title") or title
+        else:
+            # Speakers or timestamps make it a transcript; plain prose is a document.
+            timed = any(s.get("speaker") or s.get("start") is not None for s in result.get("segments", []))
+            kind = "transcript" if timed else "document"
+        source = library.create_source(project["id"], kind, title, original_filename=filename)
         with open(os.path.join(library.source_dir(source), filename), "wb") as f:
             f.write(data)
         library.save_transcript(source["id"], result)

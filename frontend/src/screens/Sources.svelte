@@ -163,7 +163,8 @@
 
   function sourceMeta(s) {
     return [fmtDate(s.created_at, app.lang), t("kind." + s.kind), fmtDuration(s.duration, app.lang),
-      s.speakers ? t("meta.speakers", { n: s.speakers }) : null].filter(Boolean).join(" · ");
+      s.speakers && !["email", "document"].includes(s.kind) ? t("meta.speakers", { n: s.speakers }) : null]
+      .filter(Boolean).join(" · ");
   }
 </script>
 
