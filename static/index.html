@@ -1004,6 +1004,27 @@
     return `${m}:${s}`;
   }
 
+  // Desktop recorder captures mic and system audio separately; surface a
+  // channel that failed or is unavailable while the recording is running.
+  const CHANNEL_LABELS = { mic: "Microphone", sys: "System audio" };
+  async function refreshRecorderWarnings() {
+    try {
+      const res = await fetch("/desktop-record/status");
+      const st = await res.json();
+      const problems = Object.entries(st.channels || {})
+        .filter(([, c]) => c.error)
+        .map(([name, c]) => `${CHANNEL_LABELS[name] || name}: ${c.error}`);
+      recStatus.className = problems.length ? "status error" : "status";
+      recStatus.textContent = problems.length ? "Recording with problems — " + problems.join(" · ") : "";
+    } catch (_) { /* transient; next tick retries */ }
+  }
+
+  function recordingFileName() {
+    const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const ext = recordingBlob && recordingBlob.type.includes("wav") ? "wav" : "webm";
+    return `recording_${ts}.${ext}`;
+  }
+
   recStartBtn.addEventListener("click", async () => {
     recStatus.textContent = "";
     recStatus.className = "status";
@@ -1015,18 +1036,24 @@
       // ── Desktop mode: record everything via Python (no screen share needed) ──
       try {
         const deviceVal = document.getElementById("mic-select").value;
-        await fetch("/desktop-record/start", {
+        const startRes = await fetch("/desktop-record/start", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
           body: JSON.stringify({
             mic_device: deviceVal !== "loopback" && deviceVal !== "" ? parseInt(deviceVal) : null,
           }),
         });
+        if (!startRes.ok) {
+          const err = await startRes.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP ${startRes.status}`);
+        }
         recStartTime = Date.now();
         recIndicator.classList.add("active");
         recTimer.textContent = "00:00";
         timerInterval = setInterval(() => {
-          recTimer.textContent = formatTime(Math.floor((Date.now() - recStartTime) / 1000));
+          const elapsed = Math.floor((Date.now() - recStartTime) / 1000);
+          recTimer.textContent = formatTime(elapsed);
+          if (elapsed % 2 === 0) refreshRecorderWarnings();
         }, 1000);
         recStartBtn.disabled = true;
         recStopBtn.disabled = false;
@@ -1127,7 +1154,10 @@
         return;
       }
       recordingBlob = await res.blob();
-      recStatus.textContent = "";
+      const channelErrors = JSON.parse(res.headers.get("X-Recording-Errors") || "{}");
+      const missing = Object.entries(channelErrors).map(([n, e]) => `${CHANNEL_LABELS[n] || n}: ${e}`);
+      recStatus.className = missing.length ? "status error" : "status";
+      recStatus.textContent = missing.length ? "Saved, but not everything was captured — " + missing.join(" · ") : "";
       const url = URL.createObjectURL(recordingBlob);
       recPlayback.src = url;
       recPlayback.onloadedmetadata = () => {
@@ -1146,10 +1176,9 @@
 
   recDownloadBtn.addEventListener("click", () => {
     if (!recordingBlob) return;
-    const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
     const a = document.createElement("a");
     a.href = URL.createObjectURL(recordingBlob);
-    a.download = `recording_${ts}.webm`;
+    a.download = recordingFileName();
     a.click();
   });
 
@@ -1158,8 +1187,7 @@
     recTranscribeBtn.disabled = true;
     resultBox.style.display = "none";
     hideProgress();
-    const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    const file = new File([recordingBlob], `recording_${ts}.webm`, { type: "audio/webm" });
+    const file = new File([recordingBlob], recordingFileName(), { type: recordingBlob.type || "audio/webm" });
     try {
       await runTranscription(file, recStatus);
     } catch (err) {

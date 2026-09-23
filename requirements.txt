@@ -3,3 +3,4 @@ python-dotenv>=1.0
 pywebview>=5.0
 sounddevice>=0.5
 soundcard>=0.4
+numpy>=1.24

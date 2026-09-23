@@ -1,8 +1,10 @@
+import json
 import os
 import subprocess
+import sys
 import tempfile
 import threading
-import uuid
+import urllib.request
 import warnings
 
 # Suppress pyannote's torchcodec warning — we pass waveform dicts so it's never used
@@ -14,7 +16,12 @@ from gigaam.preprocess import load_audio, SAMPLE_RATE
 from gigaam.utils import AudioDataset
 from torch.utils.data import DataLoader
 from dotenv import load_dotenv
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_file, send_from_directory
+
+from core.jobs import JobStore, SerialQueue
+from core.paths import recordings_dir
+from core.recorder import SAMPLE_RATE as REC_SAMPLE_RATE, DualChannelRecorder, mix_wavs
+from core.security import BIND_HOST, install_local_only_guard
 
 load_dotenv()
 
@@ -22,7 +29,11 @@ hf_token = os.getenv("HF_TOKEN")
 if hf_token:
     os.environ["HF_TOKEN"] = hf_token
 
+PORT = 5000
+OLLAMA_URL = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
+
 app = Flask(__name__, static_folder="static")
+install_local_only_guard(app)
 
 CUDA_AVAILABLE = torch.cuda.is_available()
 GPU_NAME = torch.cuda.get_device_name(0) if CUDA_AVAILABLE else None
@@ -41,14 +52,11 @@ _model_lock = threading.Lock()
 _diarization_pipeline = None
 _diarization_lock = threading.Lock()
 
-_jobs = {}
-_jobs_lock = threading.Lock()
+jobs = JobStore()
+transcription_queue = SerialQueue()  # one transcription at a time (spec D-12)
 
-_mic_lock = threading.Lock()
-_mic_state = {"recording": False, "frames": [], "samplerate": 44100, "path": None}
-
-_desktop_rec_lock = threading.Lock()
-_desktop_rec_state = {"recording": False}
+_recorder = None
+_recorder_lock = threading.Lock()
 IS_DESKTOP = False
 
 AVAILABLE_MODELS = [
@@ -108,9 +116,7 @@ def get_diarization_pipeline(device):
 
 
 def set_progress(job_id, pct, msg):
-    with _jobs_lock:
-        _jobs[job_id]["progress"] = pct
-        _jobs[job_id]["progress_msg"] = msg
+    jobs.set_progress(job_id, pct, msg)
 
 
 def transcribe_with_diarization(job_id, model, audio_path, device):
@@ -191,75 +197,88 @@ def do_longform(model, audio_path):
     return {"text": full_text, "segments": result_segments}, None
 
 
-def run_job(job_id, audio_path, wav_path, model_name, diarize, word_timestamps, device):
+def run_job(job_id, upload_path, audio_path, model_name, diarize, word_timestamps, device):
+    """Queue and run one transcription, then delete its temp files.
+
+    upload_path is the file as uploaded; audio_path is what GigaAM reads (the
+    same file, or its ffmpeg-converted WAV). Both are removed afterwards.
+    """
+    def on_wait(ahead):
+        set_progress(job_id, 0, f"Queued — waiting for {ahead} job(s) to finish…")
+
+    result, error = None, None
     try:
-        set_progress(job_id, 5, f"Loading model on {device.upper()}…")
-        model = get_model(model_name, device)
-
-        if diarize:
-            set_progress(job_id, 10, "Starting diarization…")
-            segments, error = transcribe_with_diarization(job_id, model, audio_path, device)
-            if error:
-                raise RuntimeError(error)
-            full_text = "\n".join(
-                f"[{s['speaker']}] [{gigaam.format_time(s['start'])} - {gigaam.format_time(s['end'])}] {s['text']}"
-                for s in segments
-            )
-            result = {"text": full_text, "segments": segments, "diarized": True}
-
-        elif word_timestamps:
-            set_progress(job_id, 10, "Transcribing…")
-            try:
-                res = model.transcribe(audio_path, word_timestamps=True)
-            except Exception as e:
-                if "too long" in str(e).lower():
-                    set_progress(job_id, 20, "Long file — running VAD segmentation…")
-                    result, error = do_longform(model, audio_path)
-                    if error:
-                        raise RuntimeError(error)
-                else:
-                    raise
-            else:
-                words = [
-                    {"text": w.text, "start": round(w.start, 3), "end": round(w.end, 3)}
-                    for w in res.words
-                ]
-                result = {"text": " ".join(w["text"] for w in words), "words": words}
-
-        else:
-            set_progress(job_id, 10, "Transcribing…")
-            try:
-                res = model.transcribe(audio_path)
-            except Exception as e:
-                if "too long" in str(e).lower():
-                    set_progress(job_id, 20, "Long file — running VAD segmentation…")
-                    result, error = do_longform(model, audio_path)
-                    if error:
-                        raise RuntimeError(error)
-                else:
-                    raise
-            else:
-                text = res if isinstance(res, str) else str(res)
-                result = {"text": text}
-
-        set_progress(job_id, 100, "Done.")
-        with _jobs_lock:
-            _jobs[job_id]["status"] = "done"
-            _jobs[job_id]["result"] = result
-
+        result = transcription_queue.run(
+            job_id,
+            lambda: _transcribe(job_id, audio_path, model_name, diarize, word_timestamps, device),
+            on_wait=on_wait,
+        )
     except Exception as e:
-        with _jobs_lock:
-            _jobs[job_id] = {"status": "error", "error": str(e)}
+        error = e
     finally:
-        try:
-            os.unlink(audio_path)
-        except Exception:
-            pass
-        if wav_path and wav_path != audio_path:
+        for path in {upload_path, audio_path}:
             try:
-                os.unlink(wav_path)
-            except Exception:
+                os.unlink(path)
+            except OSError:
                 pass
+    # Report completion only after cleanup, so "done" means nothing is left behind.
+    if error is not None:
+        jobs.fail(job_id, error)
+    else:
+        jobs.finish(job_id, result)
+
+
+def _transcribe(job_id, audio_path, model_name, diarize, word_timestamps, device):
+    set_progress(job_id, 5, f"Loading model on {device.upper()}…")
+    model = get_model(model_name, device)
+
+    if diarize:
+        set_progress(job_id, 10, "Starting diarization…")
+        segments, error = transcribe_with_diarization(job_id, model, audio_path, device)
+        if error:
+            raise RuntimeError(error)
+        full_text = "\n".join(
+            f"[{s['speaker']}] [{gigaam.format_time(s['start'])} - {gigaam.format_time(s['end'])}] {s['text']}"
+            for s in segments
+        )
+        result = {"text": full_text, "segments": segments, "diarized": True}
+
+    elif word_timestamps:
+        set_progress(job_id, 10, "Transcribing…")
+        try:
+            res = model.transcribe(audio_path, word_timestamps=True)
+        except Exception as e:
+            if "too long" in str(e).lower():
+                set_progress(job_id, 20, "Long file — running VAD segmentation…")
+                result, error = do_longform(model, audio_path)
+                if error:
+                    raise RuntimeError(error)
+            else:
+                raise
+        else:
+            words = [
+                {"text": w.text, "start": round(w.start, 3), "end": round(w.end, 3)}
+                for w in res.words
+            ]
+            result = {"text": " ".join(w["text"] for w in words), "words": words}
+
+    else:
+        set_progress(job_id, 10, "Transcribing…")
+        try:
+            res = model.transcribe(audio_path)
+        except Exception as e:
+            if "too long" in str(e).lower():
+                set_progress(job_id, 20, "Long file — running VAD segmentation…")
+                result, error = do_longform(model, audio_path)
+                if error:
+                    raise RuntimeError(error)
+            else:
+                raise
+        else:
+            text = res if isinstance(res, str) else str(res)
+            result = {"text": text}
+
+    return result
 
 
 @app.route("/")
@@ -298,103 +317,105 @@ def audio_devices():
         return jsonify({"error": str(e)}), 500
 
 
+def _mic_source(device_index):
+    def source(stop):
+        import sounddevice as sd
+        with sd.InputStream(device=device_index, samplerate=REC_SAMPLE_RATE, channels=1, dtype="int16") as s:
+            while not stop.is_set():
+                chunk, _ = s.read(1024)
+                yield chunk[:, 0].copy()
+    return source
+
+
+def _system_source():
+    """System-audio loopback. soundcard loopback supports Windows (WASAPI) and Linux only."""
+    if sys.platform == "darwin":
+        # Native macOS capture (ScreenCaptureKit / Core Audio taps) is spec FR-PLAT-02.
+        return ("system audio capture in the desktop app is not supported on macOS yet — "
+                "use browser mode (Open in browser) to include call audio")
+
+    def source(stop):
+        import numpy as np
+        import soundcard as sc
+        spk = sc.default_speaker()
+        lb = sc.get_microphone(id=str(spk.name), include_loopback=True)
+        with lb.recorder(samplerate=REC_SAMPLE_RATE, channels=1, blocksize=1024) as rec:
+            while not stop.is_set():
+                chunk = rec.record(numframes=1024)[:, 0]
+                yield (np.clip(chunk, -1.0, 1.0) * 32767).astype("int16")
+    return source
+
+
 @app.route("/desktop-record/start", methods=["POST"])
 def desktop_record_start():
-    """Start recording mic + system audio via Python (desktop app mode)."""
-    import sounddevice as sd
-    import soundcard as sc
-    import numpy as np
+    """Start recording mic + system audio as separate channels (desktop app mode)."""
+    global _recorder
+    data = request.get_json(silent=True) or {}
+    mic_index = data.get("mic_device")  # sounddevice index or None for default
 
-    data = request.get_json()
-    mic_index = data.get("mic_device")   # sounddevice index or None
-    sys_device = data.get("sys_device")  # "loopback" or sounddevice index
+    with _recorder_lock:
+        if _recorder is not None and _recorder.recording:
+            return jsonify({"error": "A recording is already in progress"}), 409
+        _recorder = DualChannelRecorder(
+            recordings_dir(),
+            {"mic": _mic_source(mic_index), "sys": _system_source()},
+        )
+        recording_id = _recorder.start()
+    return jsonify({"ok": True, "recording_id": recording_id})
 
-    SR = 16000
 
-    with _desktop_rec_lock:
-        _desktop_rec_state["recording"] = True
-        _desktop_rec_state["mic_frames"] = []
-        _desktop_rec_state["sys_frames"] = []
-        _desktop_rec_state["mic_path"] = None
-        _desktop_rec_state["sys_path"] = None
-
-    def _record_mic():
-        try:
-            with sd.InputStream(device=mic_index, samplerate=SR, channels=1, dtype="int16") as s:
-                while _desktop_rec_state["recording"]:
-                    chunk, _ = s.read(1024)
-                    _desktop_rec_state["mic_frames"].append(chunk.copy())
-        except Exception as e:
-            _desktop_rec_state["mic_error"] = str(e)
-
-    def _record_sys():
-        try:
-            spk = sc.default_speaker()
-            lb = sc.get_microphone(id=str(spk.name), include_loopback=True)
-            with lb.recorder(samplerate=SR, channels=1, blocksize=1024) as rec:
-                while _desktop_rec_state["recording"]:
-                    chunk = rec.record(numframes=1024)
-                    _desktop_rec_state["sys_frames"].append(
-                        (chunk * 32767).astype("int16")
-                    )
-        except Exception as e:
-            _desktop_rec_state["sys_error"] = str(e)
-
-    threading.Thread(target=_record_mic, daemon=True).start()
-    threading.Thread(target=_record_sys, daemon=True).start()
-    return jsonify({"ok": True})
+@app.route("/desktop-record/status")
+def desktop_record_status():
+    """Live recorder state, including per-channel errors (spec gap #23)."""
+    with _recorder_lock:
+        if _recorder is None:
+            return jsonify({"recording": False, "channels": {}})
+        return jsonify(_recorder.status())
 
 
 @app.route("/desktop-record/stop", methods=["POST"])
 def desktop_record_stop():
-    """Stop recording and return mixed WAV."""
-    import numpy as np, wave, time
+    """Stop recording; keep mic.wav / sys.wav on disk and return a mixed WAV for playback."""
+    with _recorder_lock:
+        if _recorder is None or not _recorder.recording:
+            return jsonify({"error": "No recording in progress"}), 409
+        result = _recorder.stop()
 
-    _desktop_rec_state["recording"] = False
-    time.sleep(0.15)  # flush last chunks
+    captured = [result[c] for c in ("sys", "mic") if result.get(c)]
+    if not captured:
+        details = "; ".join(f"{c}: {e}" for c, e in result["errors"].items())
+        return jsonify({"error": "No audio captured" + (f" ({details})" if details else ""),
+                        "errors": result["errors"]}), 400
 
-    def _save_wav(frames, path):
-        if not frames:
-            return False
-        data = np.concatenate(frames)
-        with wave.open(path, "wb") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(16000)
-            wf.writeframes(data.tobytes())
-        return True
+    playback_path = captured[0] if len(captured) == 1 else mix_wavs(
+        captured, os.path.join(result["folder"], "mixed.wav"))
 
-    with tempfile.NamedTemporaryFile(suffix="_mic.wav", delete=False) as f:
-        mic_path = f.name
-    with tempfile.NamedTemporaryFile(suffix="_sys.wav", delete=False) as f:
-        sys_path = f.name
+    response = send_file(playback_path, mimetype="audio/wav", as_attachment=False,
+                         download_name="recording.wav")
+    response.headers["X-Recording-Id"] = result["recording_id"]
+    response.headers["X-Recording-Errors"] = json.dumps(result["errors"])
+    return response
 
-    has_mic = _save_wav(_desktop_rec_state.get("mic_frames", []), mic_path)
-    has_sys = _save_wav(_desktop_rec_state.get("sys_frames", []), sys_path)
 
-    mixed_path = mic_path + "_mixed.wav"
+def ollama_reachable(timeout=0.5):
+    try:
+        with urllib.request.urlopen(OLLAMA_URL.rstrip("/") + "/api/tags", timeout=timeout):
+            return True
+    except Exception:
+        return False
 
-    if has_mic and has_sys:
-        subprocess.run(
-            ["ffmpeg", "-y", "-i", sys_path, "-i", mic_path,
-             "-filter_complex", "amix=inputs=2:duration=longest:normalize=0",
-             "-ar", "16000", "-ac", "1", mixed_path],
-            check=True, capture_output=True,
-        )
-        os.unlink(mic_path)
-        os.unlink(sys_path)
-    elif has_sys:
-        os.rename(sys_path, mixed_path)
-        if os.path.exists(mic_path): os.unlink(mic_path)
-    elif has_mic:
-        os.rename(mic_path, mixed_path)
-        if os.path.exists(sys_path): os.unlink(sys_path)
-    else:
-        return jsonify({"error": "No audio captured"}), 400
 
-    from flask import send_file
-    return send_file(mixed_path, mimetype="audio/wav", as_attachment=False,
-                     download_name="recording.wav")
+@app.route("/health")
+def health():
+    """Environment checks for the UI (spec FR-SET-01)."""
+    return jsonify({
+        "ffmpeg": FFMPEG_AVAILABLE,
+        "gpu": {"cuda": CUDA_AVAILABLE, "gpu_name": GPU_NAME, "mps": MPS_AVAILABLE},
+        "hf_token": bool(hf_token),
+        "ollama": ollama_reachable(),
+        "platform": sys.platform,
+        "system_audio_capture": not isinstance(_system_source(), str),
+    })
 
 
 def _update_env_file(key, value):
@@ -469,24 +490,19 @@ def transcribe():
         tmp_path = tmp.name
         audio_file.save(tmp_path)
 
-    wav_path = None
     if suffix in NEEDS_CONVERSION:
         try:
-            wav_path = convert_to_wav(tmp_path)
-            audio_path = wav_path
+            audio_path = convert_to_wav(tmp_path)
         except Exception as e:
             os.unlink(tmp_path)
             return jsonify({"error": str(e)}), 500
     else:
         audio_path = tmp_path
 
-    job_id = str(uuid.uuid4())
-    with _jobs_lock:
-        _jobs[job_id] = {"status": "processing", "progress": 0, "progress_msg": "Starting…"}
-
+    job_id = jobs.create()
     t = threading.Thread(
         target=run_job,
-        args=(job_id, audio_path, wav_path, model_name, diarize, word_timestamps, device),
+        args=(job_id, tmp_path, audio_path, model_name, diarize, word_timestamps, device),
         daemon=True,
     )
     t.start()
@@ -496,8 +512,7 @@ def transcribe():
 
 @app.route("/job/<job_id>")
 def job_status(job_id):
-    with _jobs_lock:
-        job = _jobs.get(job_id)
+    job = jobs.get(job_id)
     if job is None:
         return jsonify({"error": "Job not found"}), 404
     return jsonify(job)
@@ -506,15 +521,15 @@ def job_status(job_id):
 def _run_flask_background():
     import logging
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
-    app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
+    app.run(host=BIND_HOST, port=PORT, debug=False, use_reloader=False)
 
 
 def _wait_for_server(timeout=15):
-    import urllib.request, time
+    import time
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            urllib.request.urlopen("http://127.0.0.1:5000/", timeout=1)
+            urllib.request.urlopen(f"http://{BIND_HOST}:{PORT}/", timeout=1)
             return True
         except Exception:
             time.sleep(0.1)
@@ -522,8 +537,6 @@ def _wait_for_server(timeout=15):
 
 
 if __name__ == "__main__":
-    import sys
-
     try:
         import webview
         _webview_available = True
@@ -547,9 +560,10 @@ if __name__ == "__main__":
     print("  " + "-" * 40)
 
     if browser_mode:
-        print("  Open http://localhost:5000 in Chrome or Edge")
+        print(f"  Open http://localhost:{PORT} in Chrome or Edge")
         print()
-        app.run(host="0.0.0.0", port=5000, debug=False)
+        # Loopback only: never expose transcripts or /settings to the LAN (spec NFR-SEC-04).
+        app.run(host=BIND_HOST, port=PORT, debug=False)
     else:
         print("  Starting desktop window...")
         print()
@@ -562,13 +576,13 @@ if __name__ == "__main__":
 
         class _Api:
             def open_in_browser(self):
-                webbrowser.open("http://127.0.0.1:5000")
+                webbrowser.open(f"http://{BIND_HOST}:{PORT}")
 
         storage = os.path.join(os.path.expanduser("~"), ".gigaam_transcriber")
         os.makedirs(storage, exist_ok=True)
         webview.create_window(
             "GigaAM Transcriber",
-            "http://127.0.0.1:5000",
+            f"http://{BIND_HOST}:{PORT}",
             width=1200,
             height=820,
             min_size=(800, 600),

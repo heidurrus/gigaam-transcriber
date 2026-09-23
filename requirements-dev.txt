@@ -1,0 +1,4 @@
+# Test and lint tooling (not shipped to users)
+-r requirements.txt
+pytest>=8
+pyflakes>=3
