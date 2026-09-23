@@ -15,11 +15,11 @@ import gigaam
 from gigaam.preprocess import load_audio, SAMPLE_RATE
 from gigaam.utils import AudioDataset
 from torch.utils.data import DataLoader
-from dotenv import load_dotenv
 from flask import Flask, request, jsonify, send_file, send_from_directory
 
 from core.ffmpeg import ensure_ffmpeg_on_path
-from core import macos_audio
+from core import macos_audio, settings
+from core.summarize import SummaryError, summarize
 from core.jobs import JobStore, SerialQueue
 from core.paths import models_dir, recordings_dir, use_app_model_cache
 from core.recorder import SAMPLE_RATE as REC_SAMPLE_RATE, DualChannelRecorder, mix_wavs
@@ -27,7 +27,7 @@ from core.security import install_local_only_guard
 from core.transcripts import (MAX_BYTES as MAX_TRANSCRIPT_BYTES, TranscriptError,
                               is_transcript_file, parse_transcript)
 
-load_dotenv()
+settings.load_env()
 use_app_model_cache()
 
 hf_token = os.getenv("HF_TOKEN")
@@ -450,50 +450,82 @@ def health():
     })
 
 
-def _update_env_file(key, value):
-    """Write or update a single key in .env without touching other lines."""
-    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-    lines = []
-    found = False
-    if os.path.exists(env_path):
-        with open(env_path, "r") as f:
-            for line in f:
-                if line.startswith(f"{key}="):
-                    if value:
-                        lines.append(f"{key}={value}\n")
-                    found = True
-                else:
-                    lines.append(line)
-    if not found and value:
-        lines.append(f"{key}={value}\n")
-    with open(env_path, "w") as f:
-        f.writelines(lines)
+def _settings_payload():
+    prefs = settings.load_settings()
+    return {
+        "hf_token_set": bool(hf_token),
+        "anthropic_key_set": bool(settings.secret("ANTHROPIC_API_KEY")),
+        "llm_provider": prefs["llm_provider"],
+        "claude_model": prefs["claude_model"],
+        "ollama_model": prefs["ollama_model"],
+        "claude_models": [{"id": m, "label": label} for m, label in settings.CLAUDE_MODELS],
+    }
 
 
 @app.route("/settings", methods=["GET"])
 def get_settings():
-    return jsonify({"hf_token_set": bool(hf_token)})
+    return jsonify(_settings_payload())
 
 
 @app.route("/settings", methods=["POST"])
 def save_settings():
+    """Update only the fields present: hf_token, anthropic_api_key, llm_provider, claude_model, ollama_model."""
     global hf_token, _diarization_pipeline
-    data = request.get_json()
-    new_token = (data.get("hf_token") or "").strip()
+    data = request.get_json(silent=True) or {}
+    prefs = {k: data[k] for k in ("llm_provider", "claude_model", "ollama_model") if k in data}
+    try:
+        if prefs:
+            settings.save_settings(prefs)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
-    _update_env_file("HF_TOKEN", new_token)
+    if "hf_token" in data:
+        settings.set_secret("HF_TOKEN", data.get("hf_token"))
+        hf_token = settings.secret("HF_TOKEN")
+        # Reset pipeline so it reloads with the new token next time
+        with _diarization_lock:
+            _diarization_pipeline = None
+    if "anthropic_api_key" in data:
+        settings.set_secret("ANTHROPIC_API_KEY", data.get("anthropic_api_key"))
 
-    hf_token = new_token or None
-    if hf_token:
-        os.environ["HF_TOKEN"] = hf_token
+    return jsonify({"ok": True, **_settings_payload()})
+
+
+@app.route("/ollama/status")
+def ollama_status():
+    return jsonify({"reachable": ollama_reachable()})
+
+
+def _run_summary(job_id, text, title, prefs, api_key):
+    try:
+        result = summarize(text, prefs, api_key, OLLAMA_URL,
+                           on_delta=lambda piece: jobs.append_partial(job_id, piece), title=title)
+    except SummaryError as e:
+        jobs.fail(job_id, e)
+    except Exception as e:  # unexpected: keep the message, don't crash the worker
+        jobs.fail(job_id, f"Summary failed: {e}")
     else:
-        os.environ.pop("HF_TOKEN", None)
+        model = prefs["ollama_model"] if prefs["llm_provider"] == "ollama" else prefs["claude_model"]
+        jobs.finish(job_id, {"summary": result, "provider": prefs["llm_provider"], "model": model})
 
-    # Reset pipeline so it reloads with the new token next time
-    with _diarization_lock:
-        _diarization_pipeline = None
 
-    return jsonify({"ok": True, "hf_token_set": bool(hf_token)})
+@app.route("/summarize", methods=["POST"])
+def summarize_route():
+    """Summarise transcript text with the provider chosen in Settings (streams into the job)."""
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "There is no transcript text to summarise."}), 400
+    prefs = settings.load_settings()
+    api_key = settings.secret("ANTHROPIC_API_KEY")
+    if prefs["llm_provider"] == "claude" and not api_key:
+        return jsonify({"error": "Add your Anthropic API key in Settings, or choose a local model.",
+                        "needs_setup": True}), 400
+    job_id = jobs.create()
+    jobs.set_progress(job_id, 0, "Writing summary…")
+    threading.Thread(target=_run_summary, args=(job_id, text, data.get("title"), prefs, api_key),
+                     daemon=True).start()
+    return jsonify({"job_id": job_id})
 
 
 @app.route("/transcribe", methods=["POST"])

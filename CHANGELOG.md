@@ -2,6 +2,21 @@
 
 ## 1.2.0 (2026-09-23)
 
+- **AI summaries.** A **Summarize** button under every transcript (recorded, uploaded
+  or imported) writes a summary in the transcript's language: overview, key points,
+  requirements mentioned, decisions, open questions and action items. Each point
+  cites the speaker and timestamp it came from. The text streams in live.
+  - **Claude** (default: Claude Opus 5; Sonnet 5 or Haiku 4.5 selectable): add your
+    Anthropic API key in **Settings → AI summaries**. Only the transcript text is sent,
+    never audio.
+  - **Local model via Ollama** (e.g. `qwen3:8b`): nothing leaves your computer.
+  - Clear messages for a wrong key, rate limits, overload, no internet, or Ollama not running.
+- Attaching a transcript file now says **Summarize**, and summarises right away.
+- **Fixed:** PDFs and transcript files were greyed out in the macOS desktop file picker.
+- **Fixed:** keys and tokens from Settings are now stored in your user folder
+  (private to you), not inside the app, where saving could break the macOS app or be
+  lost on update. Existing tokens keep working.
+- **Fixed:** pressing Save with an empty Hugging Face token field no longer deletes the saved token.
 - **Import a transcript you already have.** Drop it where you drop audio: no speech
   recognition, it opens instantly with speakers and timestamps kept. Supported:
   - Microsoft Teams: `.vtt` or `.docx` transcript export (speaker names kept)

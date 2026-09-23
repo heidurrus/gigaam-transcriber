@@ -404,6 +404,18 @@ Source: button "Открытые вопросы" (Open questions, no target); FR
 - AC2 A question can become a backlog task (cf. S06 row "Миграция исторических обращений" / Migration of historical cases). [INF]
 Priority: Should
 
+### 3.4a Transcript summaries (SUM), added at the PO's request (D-18)
+
+**FR-SUM-01 [CONF] Summarise a transcript**
+As a BA, I want a structured summary of any transcript (recorded, uploaded or imported), so that I get the gist and candidate requirements before detailed atom review.
+Source: PO feedback 2026-09-23 ("when I attach a text file it should say summarize"). Implemented in 1.2.0 (`core/summarize.py`).
+- AC1 Every transcript result offers **Summarize**. Attaching a transcript file runs import + summary in one step.
+- AC2 The summary uses the transcript's language, with sections Summary / Key points / Requirements mentioned / Decisions / Open questions / Action items. Points cite `[speaker, mm:ss]` where the transcript has them (G2 traceability).
+- AC3 Provider per Settings: Claude via the Anthropic API (default `claude-opus-5`, server-side refusal fallback, prompt caching, streaming) or a local Ollama model (FR-SET-02, D-02).
+- AC4 (negative) No key / wrong key / rate limit / overload / offline / Ollama not running / model not pulled each produce a specific message; a missing key opens Settings.
+- AC5 Output is rendered as text-safe Markdown: model output can never inject HTML.
+Priority: Must. Relationship to atoms: the summary is a reading aid. Atoms (FR-ATM-*) remain the managed, reviewable requirement units and will reuse the same LLM settings.
+
 ### 3.5 FRD document (DOC)
 
 **FR-DOC-01 [OBS] Assemble FRD from accepted atoms**
@@ -818,7 +830,8 @@ stateDiagram-v2
 | NFR-I18N-02 | Language support | Russian speech is the primary target; other languages through the multilingual model | WER on RU conversational speech ≤ 15% with rnnt [ASM] | GigaAM, multilingual_large_ctc | [INF] |
 | NFR-COMPAT-01 | Platform | `[CONF]` D-16: a desktop app with **feature parity on Windows and macOS**. Browser mode is optional | Windows 10 (22H2) / 11 x64: native window on WebView2, CUDA or CPU. macOS 13+ on Apple Silicon: native window on WKWebView, MPS. Every feature, recording included, works in desktop mode on both. Browser mode (Chrome/Edge) is an extra. Linux: not a v1 target [ASM]. Intel Macs: CPU only, best effort [ASM] (Q-28) | D-16, baseline `/device-info` | [CONF] |
 | NFR-COMPAT-03 | Installability | `[CONF]` D-17: one package per OS; **all dependencies installed automatically**; no prerequisites | 0 manual steps apart from the HF licence acceptance (guided); no Python/git/brew/winget needed; no admin rights; first-run setup ≤ 15 min on 50 Mbit/s including the ~500 MB model and PyTorch (CUDA build ~2.5 GB) [ASM]; resumable downloads; installer ≤ 150 MB [ASM] | D-17, baseline `installer/` | [CONF] |
-| NFR-COMPAT-04 | Update safety | App updates never break or lose the environment or data | After an update, startup installs only the changed dependencies (FR-PLAT-05); rollback to the previous environment if that fails; project data untouched | D-17 | [ASM] |
+| NFR-COMPAT-04 | Update safety | App updates never break or lose the environment or data | After an update, startup installs only the changed dependencies (FR-PLAT-05); rollback to the previous environment if that fails; project data untouched | D-18 | Transcript summaries (FR-SUM-01) and the LLM settings they need (Claude key, model, Ollama) brought forward into 1.2.0 | PO feedback | FR-SUM-01, FR-SET-02/03 |
+| D-17 | [ASM] |
 | NFR-SEC-06 | Supply chain | Automatically installed components are pinned and verified | Lock file with hashes for Python packages; checksums for ffmpeg and model files; downloads only from an allow-list of hosts (PyPI, download.pytorch.org, GitHub release of GigaAM, Hugging Face, ffmpeg build host, ollama.com); HTTPS only | D-17 | [INF] |
 | NFR-SEC-07 | Code signing | Distributed binaries are signed | macOS: Developer ID + notarization (required for smooth install and for recording permissions); Windows: Authenticode signing of installer and launcher [ASM] (Q-29) | D-16 | [INF] |
 | NFR-COMPAT-02 | Layout / theme | Responsive and supports the system dark mode | Usable from 360 px to 1920 px; rail collapses at ≤ 820 px; follows `prefers-color-scheme`; respects `prefers-reduced-motion` | CSS media queries | [OBS] |

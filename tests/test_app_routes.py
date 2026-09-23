@@ -180,3 +180,58 @@ def test_unsupported_file_type_gets_a_clear_message(client):
                       content_type="multipart/form-data")
     assert res.status_code == 400
     assert "unsupported file type" in res.get_json()["error"] and ".pdf" in res.get_json()["error"]
+
+
+def test_settings_roundtrip_keeps_key_secret(client, monkeypatch, tmp_path):
+    monkeypatch.setenv("WORKBENCH_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    body = client.get("/settings").get_json()
+    assert body["anthropic_key_set"] is False and body["llm_provider"] == "claude"
+    assert {"id": "claude-opus-5", "label": "Claude Opus 5 (best quality)"} in body["claude_models"]
+    body = client.post("/settings", json={"anthropic_api_key": "sk-ant-secret", "claude_model": "claude-sonnet-5"}).get_json()
+    assert body["anthropic_key_set"] is True and body["claude_model"] == "claude-sonnet-5"
+    assert "sk-ant-secret" not in json.dumps(client.get("/settings").get_json())   # never sent back
+    assert client.post("/settings", json={"llm_provider": "gpt"}).status_code == 400
+
+
+def test_summarize_without_key_asks_for_setup(client, monkeypatch, tmp_path):
+    monkeypatch.setenv("WORKBENCH_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    res = client.post("/summarize", json={"text": "Иван: привет"})
+    assert res.status_code == 400 and res.get_json()["needs_setup"] is True
+    assert client.post("/summarize", json={"text": "  "}).status_code == 400
+
+
+def test_summarize_streams_partial_text_into_the_job(client, app_module, monkeypatch, tmp_path):
+    import threading
+    monkeypatch.setenv("WORKBENCH_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
+    release = threading.Event()
+
+    def fake_summarize(text, prefs, api_key, url, on_delta, title=None):
+        assert api_key == "sk-ant-x" and title == "call.vtt"
+        on_delta("## Итоги\n")
+        release.wait(2)
+        on_delta("Готово")
+        return "## Итоги\nГотово"
+    monkeypatch.setattr(app_module, "summarize", fake_summarize)
+
+    job_id = client.post("/summarize", json={"text": "Иван: привет", "title": "call.vtt"}).get_json()["job_id"]
+    assert wait_for(lambda: client.get(f"/job/{job_id}").get_json().get("partial") == "## Итоги\n")
+    assert client.get(f"/job/{job_id}").get_json()["status"] == "processing"
+    release.set()
+    assert wait_for(lambda: client.get(f"/job/{job_id}").get_json()["status"] == "done")
+    assert client.get(f"/job/{job_id}").get_json()["result"] == {
+        "summary": "## Итоги\nГотово", "provider": "claude", "model": "claude-opus-5"}
+
+
+def test_summary_errors_are_reported(client, app_module, monkeypatch, tmp_path):
+    monkeypatch.setenv("WORKBENCH_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
+
+    def failing(*a, **k):
+        raise app_module.SummaryError("Anthropic rejected the API key. Check it in Settings.")
+    monkeypatch.setattr(app_module, "summarize", failing)
+    job_id = client.post("/summarize", json={"text": "t"}).get_json()["job_id"]
+    assert wait_for(lambda: client.get(f"/job/{job_id}").get_json()["status"] == "error")
+    assert "rejected the API key" in client.get(f"/job/{job_id}").get_json()["error"]
