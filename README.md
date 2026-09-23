@@ -30,147 +30,66 @@ The easiest way to get started on Windows is the one-click installer.
 
 ---
 
-## Manual Setup
+## Manual Setup (macOS, Linux, or from source)
 
-Follow these steps if you prefer to set things up yourself, or if you're on macOS/Linux.
-
-### 1. Install Python
-
-Python 3.10 or newer.
-
-**Windows/Linux:** Download from [python.org](https://www.python.org/downloads/).
-
-**macOS:**
-```bash
-brew install python
-```
-Or download from [python.org](https://www.python.org/downloads/).
-
-Verify:
-```bash
-python --version
-```
-
----
-
-### 2. Install ffmpeg
-
-ffmpeg is required for WebM → WAV conversion (used when transcribing recordings).
-
-**Windows — winget (built into Windows 10/11):**
-```bash
-winget install ffmpeg
-```
-
-**Windows — chocolatey:**
-```bash
-choco install ffmpeg
-```
-
-**Windows — manual:** Download the "full build" from [gyan.dev/ffmpeg/builds](https://www.gyan.dev/ffmpeg/builds/), extract it, and add the `bin` folder to your system PATH.
-
-**macOS:**
-```bash
-brew install ffmpeg
-```
-
-**Linux (Debian/Ubuntu):**
-```bash
-sudo apt install ffmpeg
-```
-
-Verify:
-```bash
-ffmpeg -version
-```
-
----
-
-### 3. Clone and install GigaAM
+You only need **Python 3.10+**. Everything else — PyTorch (the right build for
+your GPU), GigaAM, ffmpeg and the speech model — is installed automatically by
+the app's **Setup screen** on first launch.
 
 ```bash
-git clone https://github.com/salute-developers/GigaAM.git
-cd GigaAM
-pip install -e ".[torch,longform]"
-cd ..
+git clone https://github.com/heidurrus/gigaam-transcriber.git
+cd gigaam-transcriber
+python3 -m pip install -r requirements.txt   # small base layer
+python3 launcher.py                          # opens the app window
 ```
 
----
+On first launch the window shows the Setup screen and installs, with progress:
 
-### 4. Clone this repo and install dependencies
+| Step | What | Size |
+|---|---|---|
+| PyTorch | CUDA build on NVIDIA GPUs (Windows/Linux), MPS on Apple Silicon, CPU otherwise | ~300 MB – 2.5 GB |
+| GigaAM | Speech recognition, pinned version, no git needed | ~50 MB |
+| ffmpeg | Your system ffmpeg if present, otherwise a bundled static build | ~30 MB |
+| Speech model | `v3_e2e_rnnt`, downloaded once and cached | ~500 MB |
 
-```bash
-git clone <this-repo-url>
-cd <repo-folder>
-pip install -r requirements.txt
-```
+Failed steps retry automatically; press **Retry** after fixing your connection —
+finished steps are not repeated. On every start the app re-checks this list in
+about a second and repairs anything missing (e.g. after an update or a GPU change).
 
----
+### Hugging Face token (speaker separation and long files)
 
-### 5. Set up HuggingFace token
+This is the one step that can't be automated, because it needs your consent to the
+model licences. Setup lists it as optional:
 
-Required for **speaker diarization** and **longform transcription** (files over ~25 seconds). Basic short-file transcription works without this step.
-
-1. Create a free account at [huggingface.co](https://huggingface.co)
-2. Go to **Settings → Access Tokens** → **New token** → choose **Read** access → copy it
-3. Accept terms for each of these models (just open the link, log in, click Agree):
-   - [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
-   - [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
-   - [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1)
-4. Create a file called `.env` in the project folder with this content:
-
-```
-HF_TOKEN=hf_your_token_here
-```
-
-Model weights download automatically on first use and are cached locally. After that the token is never contacted again.
-
----
-
-### 6. GPU support (optional)
-
-Skip this if you don't have a GPU. The app works fine on CPU.
-
-**Windows/Linux — NVIDIA GPU (CUDA):**
-```bash
-# Check your driver and CUDA version
-nvidia-smi
-
-# Install PyTorch with CUDA (replace cu126 with your version if needed)
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
-```
-
-**macOS — Apple Silicon (MPS):**
-
-No extra install needed. PyTorch already includes MPS support. The GPU button will be active automatically on M1/M2/M3/M4 Macs.
-
-After installing CUDA PyTorch (or on Apple Silicon), the GPU button in the UI will activate. GPU is significantly faster for long files and diarization.
+1. Create a free account at [huggingface.co](https://huggingface.co) and a **Read** access token
+2. Accept the terms of [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0),
+   [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) and
+   [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1)
+3. Paste the token in **Settings** (⚙) in the app — it's saved to `.env`
 
 ---
 
 ## Running
 
 ```bash
-python app.py
+python3 launcher.py            # desktop window (default)
+python3 launcher.py --browser  # optional: open in Chrome/Edge instead
 ```
 
-The terminal will print a status summary:
+The server listens on `127.0.0.1:5000` only and never accepts connections from
+other machines. Starting the app a second time just shows the running one.
 
+**macOS note:** on first launch macOS asks for microphone permission. In the desktop
+window, system-audio capture on macOS isn't supported yet (it's planned). Use
+browser mode in Chrome to record call audio; Chrome needs Screen Recording permission
+(System Settings → Privacy & Security → Screen Recording).
+
+### Development
+
+```bash
+python3 -m pip install -r requirements-dev.txt
+python3 -m pytest          # runs without a GPU or model weights
 ```
-  GigaAM Transcriber
-  ────────────────────────────────────────
-  ffmpeg   : found
-  GPU      : NVIDIA GeForce RTX 4070 Ti
-  HF token : set
-  ────────────────────────────────────────
-  Open http://localhost:5000 in Chrome or Edge
-```
-
-Open **http://localhost:5000** in your browser. Use Chrome or Edge — Firefox works for transcription but not for the call recorder.
-
-**macOS note:** On first launch, macOS may ask for permission to use the microphone. Allow it. For call recording, Chrome also needs Screen Recording permission — go to System Settings → Privacy & Security → Screen Recording and enable it for Chrome.
-
-To stop: `Ctrl+C` in the terminal.
 
 ---
 
@@ -205,16 +124,16 @@ Model weights download from HuggingFace on first use and are cached locally. Sub
 
 ## Troubleshooting
 
-**"ffmpeg is not installed or not on PATH"** — follow step 2 above. Restart your terminal after installing.
+**"ffmpeg is missing"** — restart the app; the startup check reinstalls it.
 
-**"HF_TOKEN is not set"** — create the `.env` file as described in step 5.
+**"HF_TOKEN is not set"** — add your token in Settings (see *Hugging Face token* above).
 
-**"GPU requested but CUDA is not available"** — follow step 6. Make sure you install the CUDA version of PyTorch, not the default CPU version.
+**"GPU requested but CUDA is not available"** — update your NVIDIA driver and restart the app; setup detects the GPU and installs the CUDA build of PyTorch.
 
-**Diarization is slow** — expected on CPU. Enable GPU (step 6) for a significant speedup.
+**Diarization is slow** — expected on CPU. A supported GPU is used automatically and is much faster.
 
 **macOS: call recorder doesn't capture system audio** — Safari and Firefox don't support `getDisplayMedia` with system audio. Use Chrome. When the screen-share dialog appears, check "Share system audio" (or "Share tab audio" if recording a specific tab).
 
 **macOS: "command not found: python"** — use `python3` instead, or create an alias: `alias python=python3`.
 
-**App appears frozen on first transcription** — it's downloading model weights (~500MB for v3_e2e_rnnt). This only happens once. The progress bar will show "Loading model…" while it loads.
+**First transcription takes a while to start** — the model is loaded into memory once per session ("Loading model…"); the download itself already happened during setup.

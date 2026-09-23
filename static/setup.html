@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Setting up — GigaAM Transcriber</title>
+<style>
+  :root {
+    --bg: #0f1117; --panel: #1a1d27; --ink: #e2e8f0; --ink-2: #94a3b8; --rule: #2d3148;
+    --accent: #4f8ef7; --ok: #4ade80; --warn: #fbbf24; --danger: #f87171;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f5f6f3; --panel: #fff; --ink: #191c1a; --ink-2: #5e645f; --rule: #dcdfda;
+            --accent: #2b5b78; --ok: #3a6a4b; --warn: #8a6110; --danger: #9e3626; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 40px 20px 60px; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: var(--ink-2); margin: 0 0 24px; }
+  .step { display: flex; gap: 12px; padding: 14px 16px; background: var(--panel);
+          border: 1px solid var(--rule); border-radius: 6px; margin-bottom: 10px; }
+  .icon { width: 20px; flex: none; text-align: center; font-weight: 700; }
+  .grow { flex: 1; min-width: 0; }
+  .title { font-weight: 600; }
+  .detail, .msg { color: var(--ink-2); font-size: 12.5px; }
+  .msg { margin-top: 4px; }
+  .done .icon { color: var(--ok); }
+  .failed .icon, .failed .msg { color: var(--danger); }
+  .manual .icon { color: var(--warn); }
+  .running .icon, .checking .icon { color: var(--accent); }
+  pre { margin: 8px 0 0; max-height: 7.5em; overflow: auto; font-size: 11px; color: var(--ink-2);
+        background: var(--bg); padding: 6px 8px; border-radius: 4px; white-space: pre-wrap; }
+  a { color: var(--accent); }
+  .bar { height: 4px; background: var(--rule); border-radius: 2px; overflow: hidden; margin: 0 0 20px; }
+  .bar i { display: block; height: 100%; background: var(--accent); transition: width .3s; }
+  .foot { margin-top: 20px; display: flex; gap: 12px; align-items: center; }
+  button { font: inherit; padding: 7px 16px; border-radius: 4px; border: 0; cursor: pointer;
+           background: var(--accent); color: #fff; }
+  button[hidden] { display: none; }
+  .note { color: var(--ink-2); font-size: 12.5px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .running .icon span { display: inline-block; animation: spin 1s linear infinite; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Setting up GigaAM Transcriber</h1>
+  <p class="sub" id="sub">Installing what the app needs. This happens once and takes a few minutes. You don't need to do anything.</p>
+  <div class="bar"><i id="bar" style="width:0"></i></div>
+  <div id="steps"></div>
+  <div class="foot">
+    <button id="retry" hidden>Retry</button>
+    <span class="note" id="note"></span>
+  </div>
+</main>
+<script>
+  const ICONS = { pending: "·", checking: "…", running: "<span>◌</span>", done: "✓", failed: "✕", manual: "!" };
+  const stepsEl = document.getElementById("steps");
+  const retryBtn = document.getElementById("retry");
+  const note = document.getElementById("note");
+  let handedOff = false;
+
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  }
+
+  function render(st) {
+    const required = st.steps.filter(s => s.required);
+    const finished = required.filter(s => s.status === "done").length;
+    document.getElementById("bar").style.width = `${Math.round(100 * finished / Math.max(1, required.length))}%`;
+    stepsEl.innerHTML = st.steps.map(s => `
+      <div class="step ${s.status}">
+        <div class="icon">${ICONS[s.status] || "·"}</div>
+        <div class="grow">
+          <div class="title">${esc(s.title)}${s.required ? "" : " <span class='detail'>(optional)</span>"}</div>
+          <div class="detail">${esc(s.detail)}</div>
+          ${s.message ? `<div class="msg">${esc(s.message)}</div>` : ""}
+          ${s.manual && s.status === "manual" && s.help_urls.length
+            ? `<div class="msg">Accept the terms: ${s.help_urls.map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener">model ${i + 1}</a>`).join(" · ")}. Then add your token in Settings.</div>` : ""}
+          ${(s.status === "running" || s.status === "failed") && s.log.length ? `<pre>${esc(s.log.join("\n"))}</pre>` : ""}
+        </div>
+      </div>`).join("");
+    retryBtn.hidden = st.state !== "failed";
+    if (st.state === "failed") {
+      note.textContent = "Something failed. Check your internet connection and press Retry. Finished steps won't be repeated.";
+    } else if (st.state === "done") {
+      note.textContent = "Done — starting the app…";
+    } else {
+      note.textContent = "";
+    }
+  }
+
+  async function handOff() {
+    handedOff = true;
+    await fetch("/setup/continue", { method: "POST" });
+    // The app replaces this setup screen on the same address; wait until it answers.
+    for (let i = 0; i < 240; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      try {
+        const res = await fetch("/health", { cache: "no-store" });
+        if (res.ok) { location.href = "/"; return; }
+      } catch (_) { /* server restarting */ }
+    }
+    note.textContent = "The app is taking long to start. Close and reopen it.";
+  }
+
+  async function poll() {
+    try {
+      const st = await (await fetch("/setup/status", { cache: "no-store" })).json();
+      render(st);
+      if (st.state === "done" && !handedOff) return handOff();
+    } catch (_) { /* transient */ }
+    if (!handedOff) setTimeout(poll, 1000);
+  }
+
+  retryBtn.addEventListener("click", async () => {
+    retryBtn.hidden = true;
+    await fetch("/setup/retry", { method: "POST" });  // the poll loop picks up the new state
+  });
+
+  poll();
+</script>
+</body>
+</html>
