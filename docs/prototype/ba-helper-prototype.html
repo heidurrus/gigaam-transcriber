@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Requirements workbench — прототип</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#EDEFEC;
+  --panel:#FFFFFF;
+  --sunk:#F5F6F3;
+  --ink:#191C1A;
+  --ink-2:#5E645F;
+  --ink-3:#8A908B;
+  --rule:#DCDFDA;
+  --rule-2:#C6CAC4;
+  --accent:#2B5B78;
+  --accent-bg:#E2EBF1;
+  --mark:#EFE7A2;
+  --danger:#9E3626;
+  --danger-bg:#F6E4E0;
+  --warn:#8A6110;
+  --warn-bg:#F6EDDC;
+  --ok:#3A6A4B;
+  --ok-bg:#E3EEE5;
+  --sans:"IBM Plex Sans",system-ui,sans-serif;
+  --serif:"IBM Plex Serif",Georgia,serif;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#15181A;--panel:#1D2124;--sunk:#22262A;--ink:#E6E9E6;--ink-2:#A2A9A5;--ink-3:#7C837E;
+    --rule:#2E3337;--rule-2:#3C4247;--accent:#8FBBD6;--accent-bg:#23333D;
+    --mark:#5C5520;--danger:#E0917F;--danger-bg:#3A2622;--warn:#D9AC5C;--warn-bg:#39301F;
+    --ok:#8CBE9B;--ok-bg:#23332A;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper);color:var(--ink);
+  font-family:var(--sans);font-size:14px;line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:var(--accent)}
+.shell{display:grid;grid-template-columns:214px minmax(0,1fr);min-height:100vh;max-width:1180px;margin:0 auto}
+.rail{border-right:1px solid var(--rule);padding:22px 0 40px}
+.brand{padding:0 20px 22px}
+.brand b{display:block;font-weight:500;font-size:15px;letter-spacing:-0.01em}
+.brand span{display:block;font-size:12px;color:var(--ink-3);margin-top:2px}
+.proj{margin:0 12px 20px;padding:9px 10px;background:var(--sunk);border:1px solid var(--rule);border-radius:3px}
+.proj em{display:block;font-style:normal;font-size:11px;color:var(--ink-3)}
+.proj b{font-weight:500;font-size:13px}
+.navitem{display:flex;gap:10px;align-items:baseline;width:100%;text-align:left;padding:7px 20px;background:none;border:0;border-left:2px solid transparent;font:inherit;color:var(--ink-2);cursor:pointer}
+.navitem:hover{color:var(--ink);background:var(--sunk)}
+.navitem.on{color:var(--ink);border-left-color:var(--accent);background:var(--sunk)}
+.navitem .n{font-family:var(--mono);font-size:11px;color:var(--ink-3);width:12px}
+.navitem.on .n{color:var(--accent)}
+.navgap{height:16px;border-bottom:1px solid var(--rule);margin:10px 20px}
+main{padding:22px 30px 80px;min-width:0}
+section[hidden]{display:none}
+.head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;padding-bottom:14px;border-bottom:1px solid var(--rule-2)}
+h1{font-size:19px;font-weight:500;margin:0;letter-spacing:-0.015em}
+.sub{font-size:12.5px;color:var(--ink-2);margin:3px 0 0}
+h2{font-size:14px;font-weight:500;margin:26px 0 10px}
+button{font:inherit}
+.btn{padding:6px 12px;background:var(--panel);border:1px solid var(--rule-2);border-radius:3px;color:var(--ink);cursor:pointer}
+.btn:hover{border-color:var(--ink-3)}
+.btn.key{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.key:hover{opacity:.9}
+.btn.sm{padding:3px 8px;font-size:12px}
+.icb{width:26px;height:24px;display:inline-flex;align-items:center;justify-content:center;padding:0;background:none;border:1px solid transparent;border-radius:3px;color:var(--ink-2);cursor:pointer}
+.icb:hover{background:var(--sunk);border-color:var(--rule);color:var(--ink)}
+.icb svg{width:14px;height:14px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.tag{display:inline-block;font-size:11px;padding:2px 7px;border-radius:2px;background:var(--sunk);color:var(--ink-2);white-space:nowrap}
+.tag.a{background:var(--accent-bg);color:var(--accent)}
+.tag.d{background:var(--danger-bg);color:var(--danger)}
+.tag.w{background:var(--warn-bg);color:var(--warn)}
+.tag.k{background:var(--ok-bg);color:var(--ok)}
+.mono{font-family:var(--mono);font-size:12px;color:var(--ink-3)}
+.quote{font-family:var(--serif);font-style:italic;font-size:13px;color:var(--ink-2);line-height:1.6}
+mark{background:var(--mark);color:inherit;padding:0 2px;border-radius:1px}
+.row{display:flex;gap:12px;padding:13px 0;border-bottom:1px solid var(--rule)}
+.row:last-child{border-bottom:0}
+.grow{flex:1;min-width:0}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:16px 0}
+.card{background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:14px}
+.card p{margin:0}
+.card .t{font-weight:500;margin-bottom:4px}
+.card .d{font-size:12.5px;color:var(--ink-2);margin-bottom:12px;line-height:1.5}
+.stat{background:var(--sunk);border-radius:4px;padding:11px 13px}
+.stat .v{font-size:22px;font-weight:500;letter-spacing:-0.02em}
+.stat .l{font-size:12px;color:var(--ink-2)}
+.note{display:flex;gap:10px;align-items:center;padding:9px 12px;border-radius:3px;font-size:12.5px;margin:14px 0}
+.note.w{background:var(--warn-bg);color:var(--warn)}
+.note.d{background:var(--danger-bg);color:var(--danger)}
+.note.n{background:var(--sunk);color:var(--ink-2)}
+.pill{font:inherit;font-size:12px;padding:4px 10px;border-radius:12px;border:1px solid var(--rule-2);background:var(--panel);color:var(--ink-2);cursor:pointer}
+.pill.on{background:var(--accent);border-color:var(--accent);color:#fff}
+select,input[type=text]{font:inherit;font-size:13px;padding:5px 8px;background:var(--panel);border:1px solid var(--rule-2);border-radius:3px;color:var(--ink)}
+input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px;margin:0}
+.bar{height:3px;background:var(--sunk);border-radius:2px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent)}
+.atom{display:flex;gap:11px;padding:14px 0;border-bottom:1px solid var(--rule)}
+.atom.sel{background:var(--sunk);box-shadow:-8px 0 0 var(--sunk),8px 0 0 var(--sunk)}
+.atom .stm{margin:0;font-size:14px;line-height:1.5}
+.atom .ev{margin:6px 0 0}
+.gone{opacity:.45}
+.gone .stm{text-decoration:line-through}
+.doc{display:grid;grid-template-columns:168px minmax(0,1fr);gap:22px;margin-top:16px}
+.toc p{margin:0 0 5px;font-size:12.5px;color:var(--ink-2);cursor:pointer}
+.toc p.on{color:var(--ink)}
+.toc p.ind{padding-left:11px}
+.blk{padding:11px 0 11px 13px;border-left:2px solid var(--accent);margin-bottom:14px}
+.blk.free{border-left-color:var(--rule-2)}
+.blk .meta{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:11px;color:var(--ink-3);margin-bottom:5px}
+.blk p.body{margin:0;font-size:14px;line-height:1.65;max-width:66ch}
+.tree{margin-left:20px;border-left:1px solid var(--rule);padding-left:16px}
+.ac{margin:8px 0 0;font-size:12.5px;color:var(--ink-2);line-height:1.6}
+.ac b{font-weight:400;color:var(--ink-3)}
+.kb{display:inline-block;font-family:var(--mono);font-size:11px;padding:1px 5px;border:1px solid var(--rule-2);border-radius:3px;color:var(--ink-2)}
+.foot{margin-top:22px;padding-top:13px;border-top:1px solid var(--rule-2);display:flex;justify-content:space-between;align-items:center;gap:12px}
+@media (max-width:820px){
+  .shell{grid-template-columns:1fr}
+  .rail{border-right:0;border-bottom:1px solid var(--rule);padding-bottom:12px}
+  .navitem{display:inline-flex;border-left:0;border-bottom:2px solid transparent;padding:6px 12px}
+  .navitem.on{border-left:0;border-bottom-color:var(--accent)}
+  .navgap{display:none}
+  main{padding:18px}
+  .doc{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:no-preference){.atom,.navitem{transition:background .12s ease}}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<nav class="rail">
+  <div class="brand"><b>Requirements workbench</b><span>локально · v0.1</span></div>
+  <div class="proj"><em>проект</em><b>CRM для контакт-центра</b></div>
+  <button class="navitem on" data-go="src"><span class="n">1</span>Источники</button>
+  <button class="navitem" data-go="tr"><span class="n">2</span>Транскрипт</button>
+  <button class="navitem" data-go="at"><span class="n">3</span>Атомы</button>
+  <button class="navitem" data-go="doc"><span class="n">4</span>Документ</button>
+  <button class="navitem" data-go="dec"><span class="n">5</span>Декомпозиция</button>
+  <button class="navitem" data-go="jira"><span class="n">6</span>Выгрузка</button>
+  <div class="navgap"></div>
+  <button class="navitem" data-go="set"><span class="n"></span>Настройки</button>
+</nav>
+
+<main>
+
+<section id="src">
+  <div class="head">
+    <div><h1>Источники</h1><p class="sub">3 обработано · 1 в работе · 64 атома извлечено</p></div>
+    <span class="tag k">GPU активен</span>
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <p class="t">Записать звонок</p>
+      <p class="d">Системный звук вместе с микрофоном. Teams, Zoom, Discord</p>
+      <button class="btn" style="width:100%">Начать запись</button>
+    </div>
+    <div class="card">
+      <p class="t">Загрузить файл</p>
+      <p class="d">Аудио, готовый транскрипт, письмо или прошлая спецификация</p>
+      <button class="btn" style="width:100%">Выбрать файл</button>
+    </div>
+    <div class="card" style="background:var(--sunk)">
+      <p class="d" style="margin-bottom:9px">Распознавание</p>
+      <select style="width:100%;margin-bottom:8px">
+        <option>v3_e2e_rnnt — лучшее качество</option>
+        <option>v3_e2e_ctc — быстрее</option>
+        <option>multilingual_large_ctc</option>
+      </select>
+      <label style="display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--ink-2)"><input type="checkbox" checked> Диаризация спикеров</label>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;gap:12px;margin-bottom:8px">
+      <span>discovery-call-19-03.webm</span>
+      <span class="mono">извлечение · 6 / 14 чанков</span>
+    </div>
+    <div class="bar"><i style="width:43%"></i></div>
+  </div>
+
+  <div>
+    <div class="row">
+      <div class="grow">
+        <p style="margin:0">Созвон с заказчиком 12.03</p>
+        <p class="mono" style="margin:2px 0 0">58 мин · 3 спикера · 34 атома</p>
+      </div>
+      <button class="btn sm" data-go="tr">Открыть транскрипт</button>
+    </div>
+    <div class="row">
+      <div class="grow">
+        <p style="margin:0">Уточнение по SLA 05.03</p>
+        <p class="mono" style="margin:2px 0 0">22 мин · 2 спикера · 11 атомов</p>
+      </div>
+      <span class="tag d">1 конфликт</span>
+    </div>
+    <div class="row">
+      <div class="grow">
+        <p style="margin:0">Требования_заказчика_v2.docx</p>
+        <p class="mono" style="margin:2px 0 0">импорт · 19 атомов</p>
+      </div>
+      <span class="tag">готово</span>
+    </div>
+  </div>
+</section>
+
+<section id="tr" hidden>
+  <div class="head">
+    <div><h1>Созвон с заказчиком 12.03</h1><p class="sub">58 мин · 3 спикера · v3_e2e_rnnt</p></div>
+    <button class="btn">Извлечь заново</button>
+  </div>
+
+  <div style="display:flex;gap:11px;align-items:center;padding:13px 0;border-bottom:1px solid var(--rule)">
+    <button class="icb" aria-label="Воспроизвести"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 2.5v11l9-5.5z"/></svg></button>
+    <span class="mono">14:32</span>
+    <div class="bar grow"><i style="width:25%"></i></div>
+    <span class="mono">58:04</span>
+  </div>
+
+  <div class="row"><div class="mono" style="width:82px;flex:none">14:18<br><span style="color:var(--accent)">Спикер 2</span></div>
+    <p style="margin:0;line-height:1.7">Смотрите, основная боль сейчас в том, что оператор берёт трубку и вообще не понимает, кто ему звонит. <mark data-atom="a1" style="cursor:pointer">Чтобы он сразу видел, с чем человек обращался раньше</mark> — вот это критично.</p></div>
+
+  <div class="row"><div class="mono" style="width:82px;flex:none">14:41<br><span style="color:var(--accent)">Спикер 1</span></div>
+    <p style="margin:0;line-height:1.7">Да, и это надо прям при входящем, до поднятия трубки. Карточка должна уже висеть.</p></div>
+
+  <div class="row"><div class="mono" style="width:82px;flex:none">15:02<br><span style="color:var(--accent)">Спикер 3</span></div>
+    <p style="margin:0;line-height:1.7">Угу. А по старым обращениям — <mark data-atom="a3" style="cursor:pointer">это надо будет отдельно обсудить</mark>, потому что там миграция из легаси.</p></div>
+
+  <div class="row"><div class="mono" style="width:82px;flex:none">41:07<br><span style="color:var(--accent)">Спикер 1</span></div>
+    <p style="margin:0;line-height:1.7"><mark data-atom="a2" style="cursor:pointer">Две секунды максимум, иначе оператор теряет клиента</mark>. Это прям принципиально.</p></div>
+
+  <p class="note n">Подсвечены фрагменты, ставшие источником атома. Клик ведёт на атом</p>
+</section>
+
+<section id="at" hidden>
+  <div class="head">
+    <div><h1>Атомы требований</h1><p class="sub"><span id="left">3</span> на ревью · принято <span id="acc">22</span> из 34</p></div>
+    <span class="tag a">Claude Opus 4.5</span>
+  </div>
+
+  <div style="display:flex;gap:6px;flex-wrap:wrap;padding:13px 0">
+    <button class="pill on" data-f="all">все</button>
+    <button class="pill" data-f="functional">функциональные</button>
+    <button class="pill" data-f="nfr">нефункциональные</button>
+    <button class="pill" data-f="вопрос">вопросы</button>
+  </div>
+
+  <div id="atoms">
+    <div class="atom" id="a1" data-k="functional">
+      <span class="tag a" style="margin-top:2px">functional</span>
+      <div class="grow">
+        <p class="stm">Оператор видит историю обращений клиента при входящем звонке</p>
+        <p class="ev quote">14:32 · Спикер 2 — «…чтобы он сразу видел, с чем человек обращался раньше»</p>
+      </div>
+      <div style="display:flex;gap:2px">
+        <button class="icb act" data-do="ok" aria-label="Принять"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8.5l3.5 3.5L13 5"/></svg></button>
+        <button class="icb" aria-label="Править"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 2.5l2.5 2.5-8 8H3v-2.5z"/></svg></button>
+        <button class="icb act" data-do="no" aria-label="Отклонить"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+      </div>
+    </div>
+
+    <div class="atom" id="a2" data-k="nfr">
+      <span class="tag" style="margin-top:2px;background:var(--accent-bg);color:var(--accent)">nfr</span>
+      <div class="grow">
+        <p class="stm">Карточка клиента открывается не дольше 2 секунд</p>
+        <p class="ev quote">41:07 · Спикер 1 — «две секунды максимум, иначе оператор теряет клиента»</p>
+        <p class="note d" style="margin:9px 0 0">Конфликт с атомом от 05.03 — там названо 5 секунд</p>
+      </div>
+      <div style="display:flex;gap:2px">
+        <button class="icb act" data-do="ok" aria-label="Принять"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8.5l3.5 3.5L13 5"/></svg></button>
+        <button class="icb" aria-label="Править"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 2.5l2.5 2.5-8 8H3v-2.5z"/></svg></button>
+        <button class="icb act" data-do="no" aria-label="Отклонить"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+      </div>
+    </div>
+
+    <div class="atom" id="a3" data-k="вопрос">
+      <span class="tag w" style="margin-top:2px">вопрос</span>
+      <div class="grow">
+        <p class="stm">Кто отвечает за миграцию исторических обращений из старой системы?</p>
+        <p class="ev quote">52:18 · Спикер 3 — «это надо будет отдельно обсудить»</p>
+      </div>
+      <div style="display:flex;gap:2px">
+        <button class="icb act" data-do="ok" aria-label="Принять"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8.5l3.5 3.5L13 5"/></svg></button>
+        <button class="icb" aria-label="Править"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 2.5l2.5 2.5-8 8H3v-2.5z"/></svg></button>
+        <button class="icb act" data-do="no" aria-label="Отклонить"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+      </div>
+    </div>
+
+    <div class="atom gone" data-k="dup">
+      <span class="tag" style="margin-top:2px">дубль</span>
+      <div class="grow">
+        <p class="stm">Нужна история по клиенту в интерфейсе оператора</p>
+        <p class="ev mono">слит с первым атомом, цитата перенесена</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="done" class="note n" hidden>Все атомы разобраны. Можно собирать документ</div>
+
+  <div class="foot">
+    <span class="mono"><span class="kb">j</span> <span class="kb">k</span> навигация · <span class="kb">a</span> принять · <span class="kb">x</span> отклонить</span>
+    <div style="display:flex;gap:8px">
+      <button class="btn">Открытые вопросы</button>
+      <button class="btn key" data-go="doc">Собрать документ</button>
+    </div>
+  </div>
+</section>
+
+<section id="doc" hidden>
+  <div class="head">
+    <div><h1>FRD — Карточка клиента у оператора</h1><p class="sub">версия 3 · 22 атома · собран 2 часа назад</p></div>
+    <div style="display:flex;gap:8px"><button class="btn">Дифф с v2</button><button class="btn">Экспорт DOCX</button></div>
+  </div>
+
+  <div class="note w">Два атома изменились после сборки, раздел 3.2 устарел
+    <button class="btn sm" style="margin-left:auto">Пересобрать</button></div>
+
+  <div class="doc">
+    <div class="toc">
+      <p>1. Назначение</p>
+      <p>2. Контекст и допущения</p>
+      <p class="on">3. Функциональные требования</p>
+      <p class="ind">3.1 Идентификация</p>
+      <p class="ind on">3.2 История обращений</p>
+      <p>4. Нефункциональные</p>
+      <p>5. Вне скоупа</p>
+      <p>6. Открытые вопросы</p>
+    </div>
+    <div>
+      <div class="blk free">
+        <div class="meta"><span>свободный текст</span><span>закреплён</span></div>
+        <p class="body">Документ описывает поведение карточки клиента в рабочем месте оператора контакт-центра при обработке входящих обращений.</p>
+      </div>
+
+      <div class="blk">
+        <div class="meta"><span style="color:var(--accent)">FR-12 · из атома, 2 источника</span>
+          <span><button class="icb" aria-label="Править атом"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 2.5l2.5 2.5-8 8H3v-2.5z"/></svg></button></span></div>
+        <p class="body">При поступлении входящего вызова система отображает оператору карточку клиента с историей его предыдущих обращений до момента ответа на вызов.</p>
+        <p class="ev quote" style="margin:8px 0 0">источники: 12.03 — 14:18, 14:41</p>
+      </div>
+
+      <div class="blk">
+        <div class="meta"><span style="color:var(--accent)">FR-13 · из атома</span>
+          <span><button class="icb" aria-label="Править атом"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 2.5l2.5 2.5-8 8H3v-2.5z"/></svg></button></span></div>
+        <p class="body">История обращений отображается в обратном хронологическом порядке с указанием канала, даты и статуса закрытия.</p>
+      </div>
+
+      <div class="note d">NFR-3 не прошёл проверку качества: «быстро» без метрики
+        <button class="btn sm" style="margin-left:auto">Починить</button></div>
+    </div>
+  </div>
+</section>
+
+<section id="dec" hidden>
+  <div class="head">
+    <div><h1>Декомпозиция</h1><p class="sub">2 эпика · 9 историй · 4 подзадачи</p></div>
+    <button class="btn">Проверить по INVEST</button>
+  </div>
+
+  <h2>Контекст клиента у оператора <span class="tag" style="font-weight:400">epic</span></h2>
+  <p class="sub" style="margin:0 0 4px">Из бизнес-цели: сократить среднее время обработки обращения на 20%</p>
+
+  <div class="tree">
+    <div class="row">
+      <input type="checkbox" checked style="margin-top:4px">
+      <div class="grow">
+        <p style="margin:0">Как оператор, я хочу видеть историю обращений клиента при входящем звонке, чтобы не переспрашивать контекст</p>
+        <p class="ac"><b>Дано</b> входящий вызов с известного номера <b>когда</b> вызов поступает <b>тогда</b> карточка с историей открыта до ответа</p>
+        <p class="ac"><b>Дано</b> номер неизвестен <b>тогда</b> открыта пустая карточка с формой поиска</p>
+        <p class="mono" style="margin:8px 0 0;color:var(--accent)">FRD 3.2 · FR-12</p>
+      </div>
+      <span class="tag a">story</span>
+    </div>
+
+    <div class="row" style="flex-direction:column;gap:0">
+      <div style="display:flex;gap:12px;width:100%">
+        <input type="checkbox" checked style="margin-top:4px">
+        <div class="grow">
+          <p style="margin:0">Как оператор, я хочу фильтровать историю по каналу обращения, чтобы быстро найти нужный эпизод</p>
+          <p class="mono" style="margin:8px 0 0;color:var(--accent)">FRD 3.2 · FR-13</p>
+        </div>
+        <span class="tag a">story</span>
+      </div>
+      <div class="tree" style="margin-top:10px;width:100%">
+        <label style="display:flex;gap:10px;align-items:center;padding:4px 0;font-size:13px;color:var(--ink-2)"><input type="checkbox"> Компонент фильтра в карточке</label>
+        <label style="display:flex;gap:10px;align-items:center;padding:4px 0;font-size:13px;color:var(--ink-2)"><input type="checkbox"> Параметр канала в API истории</label>
+        <p class="mono" style="margin:6px 0 0">подзадачи сгенерированы моделью и выключены по умолчанию</p>
+      </div>
+    </div>
+
+    <div class="row">
+      <input type="checkbox" style="margin-top:4px">
+      <div class="grow">
+        <p style="margin:0">Карточка клиента открывается не дольше 2 секунд</p>
+        <p class="note w" style="margin:9px 0 0">INVEST: не несёт ценности сама по себе. Перенести в критерии FR-12?</p>
+      </div>
+      <span class="tag">nfr</span>
+    </div>
+  </div>
+
+  <div class="foot"><span></span><button class="btn key" data-go="jira">К выгрузке</button></div>
+</section>
+
+<section id="jira" hidden>
+  <div class="head">
+    <div><h1>Предпросмотр выгрузки</h1><p class="sub">Проект CRM · доска Контакт-центр</p></div>
+    <span class="tag">Jira REST</span>
+  </div>
+
+  <div class="cards" style="grid-template-columns:repeat(3,1fr)">
+    <div class="stat"><p class="l">Создать</p><p class="v">6</p></div>
+    <div class="stat"><p class="l">Обновить</p><p class="v">2</p></div>
+    <div class="stat"><p class="l">Без изменений</p><p class="v">3</p></div>
+  </div>
+
+  <div id="push">
+    <label class="row"><input type="checkbox" class="pi" checked><span class="grow">Контекст клиента у оператора</span><span class="mono">CRM-104</span><span class="tag w">обновить</span></label>
+    <label class="row" style="padding-left:22px"><input type="checkbox" class="pi" checked><span class="grow">Как оператор, я хочу видеть историю обращений…</span><span class="tag k">создать</span></label>
+    <label class="row" style="padding-left:22px"><input type="checkbox" class="pi" checked><span class="grow">Как оператор, я хочу фильтровать историю по каналу…</span><span class="tag k">создать</span></label>
+    <label class="row gone" style="padding-left:44px"><input type="checkbox" class="pi"><span class="grow">Компонент фильтра в карточке</span><span class="tag">пропустить</span></label>
+    <label class="row"><input type="checkbox" class="pi" checked><span class="grow">Миграция исторических обращений</span><span class="tag k">создать</span></label>
+    <label class="row gone"><input type="checkbox" class="pi"><span class="grow">Как оператор, я хочу искать клиента по номеру…</span><span class="mono">CRM-118</span><span class="tag">без изменений</span></label>
+  </div>
+
+  <p class="note n">В описание каждой задачи попадёт ссылка на пункт спецификации и цитата-источник</p>
+
+  <div class="foot">
+    <span class="mono">ни одного вызова API до нажатия кнопки</span>
+    <button class="btn key" id="pushbtn">Выгрузить 4 задачи</button>
+  </div>
+</section>
+
+<section id="set" hidden>
+  <div class="head"><div><h1>Настройки</h1><p class="sub">Ключи хранятся в .env рядом с приложением</p></div></div>
+
+  <h2>Окружение</h2>
+  <div class="cards" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
+    <div class="stat"><p class="l">ffmpeg</p><p style="margin:2px 0 0;color:var(--ok)">найден</p></div>
+    <div class="stat"><p class="l">GPU</p><p style="margin:2px 0 0;color:var(--ok)">RTX 4070 Ti</p></div>
+    <div class="stat"><p class="l">HF токен</p><p style="margin:2px 0 0;color:var(--ok)">задан</p></div>
+    <div class="stat"><p class="l">Ollama</p><p style="margin:2px 0 0;color:var(--warn)">не запущена</p></div>
+  </div>
+
+  <h2>Модели по этапам</h2>
+  <div class="row"><div class="grow"><p style="margin:0">Транскрипция</p><p class="mono" style="margin:2px 0 0">GigaAM v3_e2e_rnnt</p></div><span class="tag k">локально</span></div>
+  <div class="row"><div class="grow"><p style="margin:0">Извлечение атомов</p><p class="mono" style="margin:2px 0 0">много мелких вызовов, дёшево</p></div>
+    <select><option>Claude Haiku 4.5</option><option>Claude Opus 4.5</option><option>qwen3:8b (Ollama)</option></select><span class="tag a">облако</span></div>
+  <div class="row"><div class="grow"><p style="margin:0">Сборка документа</p><p class="mono" style="margin:2px 0 0">качество текста критично</p></div>
+    <select><option>Claude Opus 4.5</option><option>Claude Sonnet 4.5</option><option>qwen3:8b (Ollama)</option></select><span class="tag a">облако</span></div>
+  <div class="row"><div class="grow"><p style="margin:0">Декомпозиция</p><p class="mono" style="margin:2px 0 0">истории и критерии приёмки</p></div>
+    <select><option>Claude Sonnet 4.5</option><option>Claude Opus 4.5</option><option>qwen3:8b (Ollama)</option></select><span class="tag a">облако</span></div>
+
+  <h2>Скиллы</h2>
+  <div class="row"><span class="grow">extract-requirements</span><span class="mono">встроенный</span></div>
+  <div class="row"><span class="grow">write-frd-gost</span><span class="mono" style="color:var(--accent)">свой</span></div>
+  <div class="row"><span class="grow">split-into-stories</span><span class="mono">встроенный</span></div>
+  <p class="note n">Скилл — папка с SKILL.md и шаблонами. Положи свою рядом, она подхватится при старте</p>
+</section>
+
+</main>
+</div>
+
+<script>
+const go = id => {
+  document.querySelectorAll('main section').forEach(s => s.hidden = s.id !== id);
+  document.querySelectorAll('.navitem').forEach(b => b.classList.toggle('on', b.dataset.go === id));
+  window.scrollTo(0, 0);
+};
+document.addEventListener('click', e => {
+  const nav = e.target.closest('[data-go]');
+  if (nav) { go(nav.dataset.go); return; }
+  const hl = e.target.closest('mark[data-atom]');
+  if (hl) { go('at'); select(document.getElementById(hl.dataset.atom)); return; }
+  const act = e.target.closest('.act');
+  if (act) { resolve(act.closest('.atom'), act.dataset.do); return; }
+  const pill = e.target.closest('.pill');
+  if (pill) {
+    document.querySelectorAll('.pill').forEach(p => p.classList.toggle('on', p === pill));
+    const f = pill.dataset.f;
+    document.querySelectorAll('#atoms .atom').forEach(a => {
+      a.hidden = f !== 'all' && a.dataset.k !== f;
+    });
+  }
+});
+
+let cur = null;
+const live = () => [...document.querySelectorAll('#atoms .atom:not(.gone)')].filter(a => !a.hidden);
+function select(el) {
+  if (!el) return;
+  document.querySelectorAll('.atom').forEach(a => a.classList.remove('sel'));
+  el.classList.add('sel');
+  cur = el;
+  el.scrollIntoView({ block: 'nearest' });
+}
+function resolve(el, how) {
+  if (!el || el.classList.contains('gone')) return;
+  const list = live();
+  const next = list[list.indexOf(el) + 1] || list[list.indexOf(el) - 1];
+  el.remove();
+  const leftEl = document.getElementById('left'), accEl = document.getElementById('acc');
+  leftEl.textContent = Math.max(0, +leftEl.textContent - 1);
+  if (how === 'ok') accEl.textContent = +accEl.textContent + 1;
+  document.getElementById('done').hidden = live().length > 0;
+  cur = null;
+  select(next);
+}
+document.addEventListener('keydown', e => {
+  if (document.getElementById('at').hidden) return;
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+  const list = live();
+  if (e.key === 'j' || e.key === 'k') {
+    const i = cur ? list.indexOf(cur) : -1;
+    select(list[e.key === 'j' ? Math.min(i + 1, list.length - 1) : Math.max(i - 1, 0)] || list[0]);
+    e.preventDefault();
+  }
+  if (e.key === 'a') resolve(cur, 'ok');
+  if (e.key === 'x') resolve(cur, 'no');
+});
+
+const btn = document.getElementById('pushbtn');
+const count = () => {
+  const n = document.querySelectorAll('#push .pi:checked').length;
+  btn.textContent = n === 0 ? 'Ничего не отмечено' : `Выгрузить ${n} ${n === 1 ? 'задачу' : n < 5 ? 'задачи' : 'задач'}`;
+  btn.disabled = false;
+};
+document.getElementById('push').addEventListener('change', count);
+count();
+btn.addEventListener('click', () => {
+  const n = document.querySelectorAll('#push .pi:checked').length;
+  btn.textContent = n === 0 ? 'Отметь хотя бы одну строку' : `Выгружено ${n}`;
+});
+</script>
+</body>
+</html>
