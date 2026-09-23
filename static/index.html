@@ -543,7 +543,7 @@
   </div>
 
   <div class="drop-zone" id="drop-zone">
-    <input type="file" id="file-input" accept="audio/*,video/*,.vtt,.srt,.txt,.docx,.pdf,.json,.md" />
+    <input type="file" id="file-input" accept="audio/*,video/*,.vtt,.srt,.txt,.docx,.pdf,.json,.md,text/plain,text/vtt,text/markdown,application/pdf,application/json,application/x-subrip,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
     <div class="drop-icon">🎙</div>
     <div class="drop-text">Drop an audio file or a transcript here, or <span>browse</span></div>
     <div class="drop-text" style="margin-top:4px;font-size:0.8rem;">Audio: WAV, MP3, FLAC, OGG, M4A, WebM… · Transcripts: Teams/Zoom .vtt, .srt, .docx, .pdf, .txt</div>
@@ -768,6 +768,10 @@
     }
     if (info.desktop) {
       inDesktopApp = true;
+      // The macOS desktop window's file dialog only honours MIME types and ignores
+      // extensions, which greys out .pdf/.vtt/.srt. Allow every file there; the
+      // server tells the user if a file isn't audio or a transcript.
+      fileInput.removeAttribute("accept");
       populateMicDevices();
       // Update recorder card hint text for desktop mode
       document.getElementById("rec-hint").innerHTML =

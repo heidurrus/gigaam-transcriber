@@ -173,3 +173,10 @@ def test_pdf_transcript_upload(client):
     job = client.get(f"/job/{res.get_json()['job_id']}").get_json()
     assert job["status"] == "done" and job["result"]["imported"]["format"] == "pdf"
     assert {s.get("speaker") for s in job["result"]["segments"]} >= {"Иван Петров", "Анна Смирнова"}
+
+
+def test_unsupported_file_type_gets_a_clear_message(client):
+    res = client.post("/transcribe", data={"audio": (io.BytesIO(b"PK"), "budget.xlsx")},
+                      content_type="multipart/form-data")
+    assert res.status_code == 400
+    assert "unsupported file type" in res.get_json()["error"] and ".pdf" in res.get_json()["error"]

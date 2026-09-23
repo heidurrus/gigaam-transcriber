@@ -77,6 +77,10 @@ AVAILABLE_MODELS = [
 
 # Formats that need ffmpeg conversion to WAV before GigaAM can read them
 NEEDS_CONVERSION = {".webm", ".ogg", ".opus", ".mp4", ".m4a", ".weba"}
+# Everything ffmpeg/GigaAM can read that people actually upload; anything else gets a
+# clear message instead of an ffmpeg error (the desktop file picker allows all files).
+AUDIO_VIDEO_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg", ".opus", ".m4a", ".aac", ".wma", ".webm",
+                          ".weba", ".mp4", ".m4v", ".mov", ".mkv", ".avi", ".aiff", ".aif", ".amr", ".3gp"}
 
 
 def convert_to_wav(input_path):
@@ -525,6 +529,9 @@ def transcribe():
 
     audio_file = request.files["audio"]
     suffix = os.path.splitext(audio_file.filename)[1].lower() or ".wav"
+    if suffix not in AUDIO_VIDEO_EXTENSIONS:
+        return jsonify({"error": f"{audio_file.filename}: unsupported file type. Use audio or video "
+                        "(WAV, MP3, M4A, WebM, MP4…) or a transcript (.vtt, .srt, .docx, .pdf, .txt)."}), 400
 
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp_path = tmp.name
