@@ -54,6 +54,17 @@ class StreamingWavWriter:
         self._file.close()
 
 
+def wav_peak(path, block_frames=SAMPLE_RATE * 10):
+    """Largest absolute sample in a mono 16-bit WAV (0 = completely silent), read in blocks."""
+    peak = 0
+    with wave.open(path, "rb") as r:
+        while True:
+            block = np.frombuffer(r.readframes(block_frames), dtype="<i2")
+            if not len(block):
+                return peak
+            peak = max(peak, int(np.abs(block.astype(np.int32)).max()))
+
+
 def mix_wavs(paths, out_path, block_frames=SAMPLE_RATE * 10):
     """Sum mono 16-bit WAVs into one (clipped), block by block to keep memory flat.
 

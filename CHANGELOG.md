@@ -13,6 +13,15 @@
     Settings becomes a full-screen sheet on small windows.
   - Light and dark themes follow the system and use the prototype's palette.
     System fonts only, so nothing is fetched from the internet.
+- **Fixed: recording on the Mac captured nothing ("No audio captured").**
+  - The Mac app now runs Python inside its own process, so macOS asks for microphone
+    and system-audio access *for Requirements Workbench*. Before, the app handed over to
+    a separate Python program, which macOS silently refused without ever asking.
+  - The app asks for the microphone before recording and, if access is off, says where
+    to turn it on (System Settings → Privacy & Security → Microphone).
+  - System audio no longer stalls when nothing is playing: silences are filled, so both
+    channels stay in sync and Stop always works. A channel that delivers nothing, or
+    system audio that stayed silent throughout, is reported with the likely reason.
 - **Fixed:** the microphone list could be empty, and it offered "System audio" as a
   microphone (system audio is always recorded on its own).
 
