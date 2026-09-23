@@ -1,14 +1,15 @@
 """Import ready-made transcripts (spec FR-SRC-03 AC2: text sources skip transcription).
 
 Supported: WebVTT (Teams, Zoom, Google Meet), SRT, DOCX (Teams export or any
-document), plain text in common layouts, and this app's own JSON result. Output
+document), PDF with a text layer (via pypdf), plain text in common layouts, and
+this app's own JSON result. Output
 has the same shape as a transcription result, so the UI (and later the atom
 extraction) treat imported and transcribed sources alike:
 
     {"text": str, "segments": [{"speaker"?, "start"?, "end"?, "text"}], "diarized": bool,
      "imported": {"format": str, "filename": str}}
 
-Stdlib only.
+Stdlib only, except pypdf for PDF (imported lazily).
 """
 import html
 import io
@@ -18,8 +19,8 @@ import re
 import zipfile
 from xml.etree import ElementTree
 
-TRANSCRIPT_EXTENSIONS = {".vtt", ".srt", ".txt", ".docx", ".json", ".md"}
-MAX_BYTES = 20 * 1024 * 1024
+TRANSCRIPT_EXTENSIONS = {".vtt", ".srt", ".txt", ".docx", ".pdf", ".json", ".md"}
+MAX_BYTES = 50 * 1024 * 1024
 MERGE_GAP_SECONDS = 1.5  # consecutive cues of one speaker closer than this become one turn
 
 
@@ -283,6 +284,35 @@ def docx_text(data):
     return "\n".join(paragraphs)
 
 
+# "Page 2 of 5", "Страница 2 из 5", "стр. 2", "- 2 -", a bare page number
+_PAGE_FURNITURE = re.compile(
+    r"^(?:(?:page|p\.|страница|стр\.?)\s*\d+(?:\s*(?:of|из|/)\s*\d+)?|[-–—]?\s*\d{1,4}\s*[-–—]?|\d+\s*/\s*\d+)$",
+    re.I)
+
+
+def pdf_text(data):
+    try:
+        from pypdf import PdfReader
+        from pypdf.errors import PdfReadError
+    except ImportError:
+        raise TranscriptError("PDF support is missing: restart the app to let setup install it")
+    try:
+        reader = PdfReader(io.BytesIO(data))
+        if reader.is_encrypted and not reader.decrypt(""):
+            raise TranscriptError("this PDF is password-protected; save an unprotected copy and try again")
+        pages = [page.extract_text() or "" for page in reader.pages]
+    except TranscriptError:
+        raise
+    except (PdfReadError, ValueError, KeyError, TypeError) as e:
+        raise TranscriptError(f"not a readable PDF file ({e})")
+    lines = [ln for page in pages for ln in (page.split("\n") + [""])
+             if not _PAGE_FURNITURE.match(ln.strip())]
+    text = "\n".join(lines)
+    if not text.strip():
+        raise TranscriptError("this PDF has no text layer (probably a scan); OCR isn't supported yet")
+    return text
+
+
 def parse_app_json(text):
     try:
         data = json.loads(text)
@@ -311,6 +341,8 @@ def parse_transcript(filename, data):
     ext = os.path.splitext(filename or "")[1].lower()
     if ext == ".docx":
         return _result(parse_plain(docx_text(data)), "docx", filename)
+    if ext == ".pdf":
+        return _result(parse_plain(pdf_text(data)), "pdf", filename)
     text = decode_text(data)
     if ext == ".json":
         return _result(parse_app_json(text), "json", filename)

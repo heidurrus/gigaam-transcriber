@@ -227,7 +227,7 @@ Priority: Should
 As a BA, I want to upload audio, a ready-made transcript, an email or an earlier specification, so that all elicitation material feeds the same pipeline.
 Source: S01 card "Загрузить файл — Аудио, готовый транскрипт, письмо или прошлая спецификация" (Upload a file — audio, ready-made transcript, email or earlier spec); sample `Требования_заказчика_v2.docx` "импорт · 19 атомов".
 Baseline: **audio/video upload exists** [BASE] (drag-and-drop, `accept="audio/*,video/*"`, WAV/MP3/FLAC/OGG/M4A/WebM, ffmpeg conversion). **New:** text-document import (transcript, email, docx spec) and keeping the file as a Source (the baseline deletes the upload after the job).
-**Status:** transcript import brought forward and shipped in 1.2.0 at the PO's request (Teams `.vtt`/`.docx`, Zoom/Meet `.vtt`, `.srt`, plain text with speaker lines, app JSON; `core/transcripts.py`). Emails and earlier specs remain in increment 1; keeping files as Sources comes with persistence (increment 1).
+**Status:** transcript import brought forward and shipped in 1.2.0 at the PO's request (Teams `.vtt`/`.docx`, Zoom/Meet `.vtt`, `.srt`, PDF with a text layer, plain text with speaker lines, app JSON; `core/transcripts.py`). Emails and earlier specs remain in increment 1; keeping files as Sources comes with persistence (increment 1).
 - AC1 Given an audio file When imported Then it is transcribed and then extracted.
 - AC2 Given a text document (transcript/email/spec) When imported Then transcription is skipped and atoms are extracted directly ("импорт").
 - AC3 (negative) Given an unsupported format or a file over the size limit When I select it Then the import is refused with the list of supported formats and the limit. [ASM] (Q-11)

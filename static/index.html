@@ -543,10 +543,10 @@
   </div>
 
   <div class="drop-zone" id="drop-zone">
-    <input type="file" id="file-input" accept="audio/*,video/*,.vtt,.srt,.txt,.docx,.json,.md" />
+    <input type="file" id="file-input" accept="audio/*,video/*,.vtt,.srt,.txt,.docx,.pdf,.json,.md" />
     <div class="drop-icon">🎙</div>
     <div class="drop-text">Drop an audio file or a transcript here, or <span>browse</span></div>
-    <div class="drop-text" style="margin-top:4px;font-size:0.8rem;">Audio: WAV, MP3, FLAC, OGG, M4A, WebM… · Transcripts: Teams/Zoom .vtt, .srt, .docx, .txt</div>
+    <div class="drop-text" style="margin-top:4px;font-size:0.8rem;">Audio: WAV, MP3, FLAC, OGG, M4A, WebM… · Transcripts: Teams/Zoom .vtt, .srt, .docx, .pdf, .txt</div>
     <div class="file-name" id="file-name"></div>
   </div>
 
@@ -831,7 +831,7 @@
 
   let selectedFile = null;
 
-  const TRANSCRIPT_EXTS = [".vtt", ".srt", ".txt", ".docx", ".json", ".md"];
+  const TRANSCRIPT_EXTS = [".vtt", ".srt", ".txt", ".docx", ".pdf", ".json", ".md"];
   const isTranscriptFile = name => TRANSCRIPT_EXTS.some(ext => name.toLowerCase().endsWith(ext));
 
   function setFile(file) {

@@ -54,7 +54,7 @@ See [`CHANGELOG.md`](CHANGELOG.md) for what changed in each release.
 - **Transcription** of recordings or uploaded files (WAV, MP3, FLAC, OGG, M4A, WebM, video…)
   with every GigaAM model, including long files and word timestamps
 - **Import existing transcripts**: Teams (`.vtt`, `.docx`), Zoom / Meet (`.vtt`), `.srt`,
-  plain text with `Name: text` lines. They open instantly, with speakers and timestamps kept
+  PDF (with a text layer), plain text with `Name: text` lines. They open instantly, with speakers and timestamps kept
 - **Speaker separation** (who said what) with pyannote
 - Runs on **CPU or GPU**: NVIDIA CUDA on Windows, Apple GPU on Apple Silicon
 - One transcription at a time, with a queue and live progress

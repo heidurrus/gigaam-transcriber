@@ -8,5 +8,6 @@ sounddevice>=0.5
 soundcard>=0.4
 numpy>=1.24
 uv>=0.4
+pypdf>=5          # reading PDF transcripts and documents
 # macOS: system-audio capture in the desktop app (Core Audio process taps)
 pyobjc-framework-CoreAudio>=11; sys_platform == "darwin"

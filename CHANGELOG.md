@@ -5,6 +5,8 @@
 - **Import a transcript you already have.** Drop it where you drop audio: no speech
   recognition, it opens instantly with speakers and timestamps kept. Supported:
   - Microsoft Teams: `.vtt` or `.docx` transcript export (speaker names kept)
+  - PDF with a text layer: Teams/Otter PDF exports or any document; page headers
+    like "Page 2 of 5" are dropped. Scanned PDFs get a clear message (no OCR yet)
   - Zoom / Google Meet: `.vtt`
   - Subtitles: `.srt`
   - Plain text: `Name: text` lines, timestamped lines, or text copied from this app
