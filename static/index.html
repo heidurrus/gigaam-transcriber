@@ -469,6 +469,25 @@
       margin-bottom: 20px;
     }
     .settings-note a { color: #4f8ef7; text-decoration: none; }
+    .settings-section { font-size: 0.95rem; font-weight: 600; margin: 4px 0 12px; color: #e2e8f0; }
+    .settings-sep { border: 0; border-top: 1px solid #2d3748; margin: 8px 0 18px; }
+    .settings-field { margin-bottom: 12px; }
+    .settings-field label { font-size: 0.82rem; color: #94a3b8; display: block; margin-bottom: 6px; }
+    .settings-field select, .settings-field input[type=text] {
+      width: 100%; background: #0f1117; border: 1px solid #2d3748; border-radius: 8px;
+      color: #e2e8f0; font-size: 0.9rem; padding: 9px 12px; }
+    .summary-panel { margin-top: 22px; display: none; }
+    .summary-text { background: #0f1117; border: 1px solid #2d3748; border-radius: 8px; padding: 14px 18px;
+      font-size: 0.95rem; line-height: 1.65; word-break: break-word; }
+    .summary-text h3 { font-size: 1rem; margin: 14px 0 6px; color: #e2e8f0; }
+    .summary-text h3:first-child { margin-top: 0; }
+    .summary-text ul, .summary-text ol { margin: 4px 0 8px 20px; padding: 0; }
+    .summary-text p { margin: 6px 0; }
+    .summary-text .ref { color: #94a3b8; font-size: 0.85em; white-space: nowrap; }
+    .summary-meta { font-size: 0.78rem; color: #64748b; margin-top: 6px; }
+    .result-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .result-actions .copy-btn.primary { background: #4f8ef7; color: #fff; }
+    .result-actions .copy-btn.primary:hover { background: #3b7be0; }
     .settings-note a:hover { text-decoration: underline; }
   </style>
 </head>
@@ -481,6 +500,47 @@
   <div class="modal">
     <button class="modal-close" onclick="closeSettings()">&times;</button>
     <h2>Settings</h2>
+
+    <div class="settings-section">AI summaries</div>
+    <div class="settings-field">
+      <label for="llm-provider">Summarise with</label>
+      <select id="llm-provider" onchange="saveLlmPrefs(); showProviderFields()">
+        <option value="claude">Claude (Anthropic API, cloud)</option>
+        <option value="ollama">Local model (Ollama, nothing leaves your computer)</option>
+      </select>
+    </div>
+    <div id="claude-fields">
+      <label style="font-size:0.82rem;color:#94a3b8;display:block;margin-bottom:8px;">Anthropic API key</label>
+      <div class="token-row">
+        <input type="password" id="anthropic-key-input" placeholder="sk-ant-..." autocomplete="off" />
+        <button class="btn" id="anthropic-show-btn" onclick="toggleVisibility('anthropic-key-input', 'anthropic-show-btn')" style="flex:0;padding:0 12px;font-size:0.8rem;">Show</button>
+        <button class="btn" onclick="saveAnthropicKey()" style="flex:0;padding:0 14px;">Save</button>
+      </div>
+      <div class="token-status unset" id="anthropic-status">Not set</div>
+      <div class="settings-field">
+        <label for="claude-model">Model</label>
+        <select id="claude-model" onchange="saveLlmPrefs()"></select>
+      </div>
+      <div class="settings-note">
+        Create a key at <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a>.
+        Only the transcript <b>text</b> is sent to Anthropic when you press Summarize. Audio never leaves your computer.
+        The key is stored on this computer only.
+      </div>
+    </div>
+    <div id="ollama-fields" style="display:none">
+      <div class="settings-field">
+        <label for="ollama-model">Local model</label>
+        <input type="text" id="ollama-model" placeholder="qwen3:8b" onchange="saveLlmPrefs()" />
+      </div>
+      <div class="token-status unset" id="ollama-status">Checking Ollama…</div>
+      <div class="settings-note">
+        Install <a href="https://ollama.com/download" target="_blank">Ollama</a>, then download a model once in a terminal,
+        e.g. <code>ollama pull qwen3:8b</code>. Local models are private but slower and less accurate than Claude.
+      </div>
+    </div>
+
+    <hr class="settings-sep">
+    <div class="settings-section">Speaker separation</div>
 
     <label style="font-size:0.82rem;color:#94a3b8;display:block;margin-bottom:8px;">HuggingFace Token</label>
     <div class="token-row">
@@ -567,7 +627,19 @@
   <div class="result-box" id="result-box">
     <div class="result-label">Transcript</div>
     <div class="result-text" id="result-text"></div>
-    <button class="copy-btn" id="copy-btn">Copy</button>
+    <div class="result-actions">
+      <button class="copy-btn" id="copy-btn">Copy</button>
+      <button class="copy-btn primary" id="summarize-btn">Summarize</button>
+    </div>
+
+    <div class="summary-panel" id="summary-panel">
+      <div class="result-label">Summary</div>
+      <div class="summary-text" id="summary-text"></div>
+      <div class="summary-meta" id="summary-meta"></div>
+      <div class="result-actions">
+        <button class="copy-btn" id="copy-summary-btn">Copy summary</button>
+      </div>
+    </div>
 
     <div class="words-table" id="words-table">
       <div class="result-label" style="margin-top:20px;">Word timestamps</div>
@@ -683,9 +755,65 @@
   }
 
   // ── Settings modal ───────────────────────────────────────────────────────
-  function openSettings() {
+  function openSettings(focusAi) {
     document.getElementById("settings-modal").classList.add("open");
-    fetch("/settings").then(r => r.json()).then(updateTokenStatus);
+    fetch("/settings").then(r => r.json()).then(info => {
+      updateTokenStatus(info);
+      updateLlmSettings(info);
+      if (focusAi && info.llm_provider === "claude") document.getElementById("anthropic-key-input").focus();
+    });
+  }
+
+  function updateLlmSettings(info) {
+    document.getElementById("llm-provider").value = info.llm_provider;
+    const sel = document.getElementById("claude-model");
+    sel.innerHTML = info.claude_models.map(m => `<option value="${esc(m.id)}">${esc(m.label)}</option>`).join("");
+    sel.value = info.claude_model;
+    document.getElementById("ollama-model").value = info.ollama_model;
+    const st = document.getElementById("anthropic-status");
+    st.textContent = info.anthropic_key_set ? "Key is set: summaries enabled" : "Not set: add a key to summarise with Claude";
+    st.className = "token-status " + (info.anthropic_key_set ? "set" : "unset");
+    document.getElementById("anthropic-key-input").placeholder = info.anthropic_key_set ? "key saved — paste a new one to change" : "sk-ant-...";
+    showProviderFields();
+  }
+
+  function showProviderFields() {
+    const ollama = document.getElementById("llm-provider").value === "ollama";
+    document.getElementById("claude-fields").style.display = ollama ? "none" : "block";
+    document.getElementById("ollama-fields").style.display = ollama ? "block" : "none";
+    if (ollama) {
+      const st = document.getElementById("ollama-status");
+      fetch("/ollama/status").then(r => r.json()).then(o => {
+        st.textContent = o.reachable ? "Ollama is running" : "Ollama is not running: start the Ollama app";
+        st.className = "token-status " + (o.reachable ? "set" : "unset");
+      });
+    }
+  }
+
+  function postSettings(body) {
+    return fetch("/settings", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body) })
+      .then(r => r.json());
+  }
+
+  function saveLlmPrefs() {
+    postSettings({
+      llm_provider: document.getElementById("llm-provider").value,
+      claude_model: document.getElementById("claude-model").value,
+      ollama_model: document.getElementById("ollama-model").value.trim() || "qwen3:8b",
+    }).then(info => { if (!info.error) updateLlmSettings(info); });
+  }
+
+  function saveAnthropicKey() {
+    const input = document.getElementById("anthropic-key-input");
+    const key = input.value.trim();
+    if (!key) return;
+    postSettings({ anthropic_api_key: key }).then(info => { input.value = ""; updateLlmSettings(info); });
+  }
+
+  function toggleVisibility(inputId, btnId) {
+    const input = document.getElementById(inputId), btn = document.getElementById(btnId);
+    input.type = input.type === "password" ? "text" : "password";
+    btn.textContent = input.type === "password" ? "Show" : "Hide";
   }
 
   function closeSettings() {
@@ -717,6 +845,7 @@
 
   function saveSettings() {
     const token = document.getElementById("hf-token-input").value.trim();
+    if (!token) return;  // an empty field must not erase the saved token
     fetch("/settings", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
@@ -842,7 +971,8 @@
     selectedFile = file;
     const transcript = isTranscriptFile(file.name);
     fileNameEl.textContent = transcript ? `${file.name} — transcript, no speech recognition needed` : file.name;
-    transcribeBtn.textContent = transcript ? "Open transcript" : "Transcribe";
+    // A transcript is already transcribed: the useful next step is summarising it.
+    transcribeBtn.textContent = transcript ? "Summarize" : "Transcribe";
     transcribeBtn.disabled = false;
   }
 
@@ -935,6 +1065,7 @@
     }
 
     const data = job.result;
+    lastResult = { text: data.text, title: file.name };
 
     statusTarget.textContent = data.imported
       ? `Imported ${data.imported.format.toUpperCase()} transcript: ${data.segments?.length || 0} segments` +
@@ -987,15 +1118,111 @@
     if (!selectedFile) return;
     transcribeBtn.disabled = true;
     resultBox.style.display = "none";
+    resetSummary();
+    lastResult = null;
     hideProgress();
     try {
       await runTranscription(selectedFile, statusEl);
+      // Attached a transcript? Transcription is already done, so go straight to the summary.
+      if (lastResult && isTranscriptFile(selectedFile.name)) await runSummary();
     } catch (err) {
       hideProgress();
       statusEl.className = "status error";
       statusEl.textContent = "Request failed: " + err.message;
     }
     transcribeBtn.disabled = false;
+  });
+
+  // ── Summaries ────────────────────────────────────────────────────────────
+  let lastResult = null;
+  const summarizeBtn = document.getElementById("summarize-btn");
+  const summaryPanel = document.getElementById("summary-panel");
+  const summaryText = document.getElementById("summary-text");
+  const summaryMeta = document.getElementById("summary-meta");
+  let lastSummary = "";
+
+  // Minimal Markdown → HTML for summaries. Escapes first, so model output can't inject HTML.
+  function renderMarkdown(md) {
+    const inline = t => t
+      .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+      .replace(/\[([^\[\]]{1,60}?,\s*\d{1,2}:\d{2}(?::\d{2})?)\]/g, '<span class="ref">[$1]</span>');
+    let html = "", list = null;
+    const closeList = () => { if (list) { html += `</${list}>`; list = null; } };
+    for (const raw of esc(md).split("\n")) {
+      const line = raw.trimEnd();
+      let m;
+      if ((m = line.match(/^#{1,6}\s+(.*)$/))) { closeList(); html += `<h3>${inline(m[1])}</h3>`; }
+      else if ((m = line.match(/^\s*[-*•]\s+(.*)$/))) {
+        if (list !== "ul") { closeList(); html += "<ul>"; list = "ul"; }
+        html += `<li>${inline(m[1])}</li>`;
+      } else if ((m = line.match(/^\s*\d+[.)]\s+(.*)$/))) {
+        if (list !== "ol") { closeList(); html += "<ol>"; list = "ol"; }
+        html += `<li>${inline(m[1])}</li>`;
+      } else if (!line.trim()) { closeList(); }
+      else { closeList(); html += `<p>${inline(line)}</p>`; }
+    }
+    closeList();
+    return html;
+  }
+
+  function resetSummary() {
+    summaryPanel.style.display = "none";
+    summaryText.innerHTML = "";
+    summaryMeta.textContent = "";
+    lastSummary = "";
+  }
+
+  async function runSummary() {
+    if (!lastResult || !lastResult.text) return;
+    summarizeBtn.disabled = true;
+    summaryPanel.style.display = "block";
+    summaryText.innerHTML = "";
+    summaryMeta.className = "summary-meta";
+    summaryMeta.textContent = "Writing summary…";
+    try {
+      const res = await fetch("/summarize", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ text: lastResult.text, title: lastResult.title }),
+      });
+      const started = await res.json();
+      if (!res.ok) {
+        summaryMeta.textContent = started.error || "Could not start the summary.";
+        summaryMeta.className = "summary-meta status error";
+        if (started.needs_setup) openSettings(true);
+        return;
+      }
+      while (true) {
+        const job = await (await fetch(`/job/${started.job_id}`)).json();
+        if (job.partial) summaryText.innerHTML = renderMarkdown(job.partial);
+        if (job.status === "done") {
+          lastSummary = job.result.summary;
+          summaryText.innerHTML = renderMarkdown(lastSummary);
+          summaryMeta.textContent = `Summarised with ${job.result.model}`;
+          return;
+        }
+        if (job.status === "error") {
+          summaryMeta.textContent = job.error;
+          summaryMeta.className = "summary-meta status error";
+          if (/API key|Settings/.test(job.error)) openSettings(true);
+          return;
+        }
+        await new Promise(r => setTimeout(r, 600));
+      }
+    } catch (err) {
+      summaryMeta.textContent = "Summary failed: " + err.message;
+      summaryMeta.className = "summary-meta status error";
+    } finally {
+      summarizeBtn.disabled = false;
+    }
+  }
+
+  summarizeBtn.addEventListener("click", runSummary);
+  document.getElementById("copy-summary-btn").addEventListener("click", e => {
+    if (!lastSummary) return;
+    navigator.clipboard.writeText(lastSummary).then(() => {
+      e.target.textContent = "Copied!";
+      setTimeout(() => { e.target.textContent = "Copy summary"; }, 1500);
+    });
   });
 
   copyBtn.addEventListener("click", () => {
@@ -1211,6 +1438,7 @@
     if (!recordingBlob) return;
     recTranscribeBtn.disabled = true;
     resultBox.style.display = "none";
+    resetSummary();
     hideProgress();
     const file = new File([recordingBlob], recordingFileName(), { type: recordingBlob.type || "audio/webm" });
     try {

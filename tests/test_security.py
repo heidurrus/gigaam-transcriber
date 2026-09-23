@@ -42,7 +42,7 @@ def test_dns_rebinding_host_is_rejected(client):
 
 def test_cross_origin_settings_write_is_rejected(client, app_module, monkeypatch):
     written = []
-    monkeypatch.setattr(app_module, "_update_env_file", lambda k, v: written.append((k, v)))
+    monkeypatch.setattr(app_module.settings, "set_secret", lambda k, v: written.append((k, v)))
     res = client.post("/settings", json={"hf_token": "hf_x"}, headers={"Origin": "https://evil.example"})
     assert res.status_code == 403
     assert written == []

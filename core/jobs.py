@@ -32,6 +32,13 @@ class JobStore:
                 job["progress"] = pct
                 job["progress_msg"] = msg
 
+    def append_partial(self, job_id, text):
+        """Streamed output so far (e.g. a summary being written), shown while the job runs."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is not None:
+                job["partial"] = job.get("partial", "") + text
+
     def finish(self, job_id, result):
         with self._lock:
             job = self._jobs.get(job_id)

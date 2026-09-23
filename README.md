@@ -56,6 +56,9 @@ See [`CHANGELOG.md`](CHANGELOG.md) for what changed in each release.
 - **Import existing transcripts**: Teams (`.vtt`, `.docx`), Zoom / Meet (`.vtt`), `.srt`,
   PDF (with a text layer), plain text with `Name: text` lines. They open instantly, with speakers and timestamps kept
 - **Speaker separation** (who said what) with pyannote
+- **AI summaries** of any transcript: key points, requirements, decisions, open questions,
+  action items, each citing speaker and timestamp. Uses **Claude** (add your Anthropic API key
+  in Settings; only text is sent) or a **local model via Ollama** (nothing leaves your computer)
 - Runs on **CPU or GPU**: NVIDIA CUDA on Windows, Apple GPU on Apple Silicon
 - One transcription at a time, with a queue and live progress
 - The local server only accepts connections from your own computer
@@ -98,7 +101,16 @@ model licences. Setup lists it as optional:
 2. Accept the terms of [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0),
    [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) and
    [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1)
-3. Paste the token in **Settings** (⚙) in the app. It's saved to `.env`
+3. Paste the token in **Settings** (⚙) in the app. It's stored privately in your user folder
+
+### AI summaries
+
+Open **Settings (⚙) → AI summaries** and choose one:
+
+- **Claude**: paste an API key from [console.anthropic.com](https://console.anthropic.com/settings/keys).
+  Default model: Claude Opus 5 (best quality); Sonnet 5 and Haiku 4.5 are faster and cheaper.
+- **Local model**: install [Ollama](https://ollama.com/download), run `ollama pull qwen3:8b` once,
+  and choose it in Settings. Private, but slower and less accurate
 
 ---
 
