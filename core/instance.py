@@ -15,7 +15,8 @@ from core.paths import app_data_dir
 from core.security import BIND_HOST
 
 APP_ID = "requirements-workbench"
-DEFAULT_PORT = 47823
+# WORKBENCH_PORT lets a second copy run side by side (development, testing).
+DEFAULT_PORT = int(os.environ.get("WORKBENCH_PORT") or 47823)
 IDENTITY_PATH = "/__workbench/instance"
 
 

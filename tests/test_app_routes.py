@@ -9,6 +9,12 @@ import pytest
 from tests.test_recorder import read_wav, tone_source, wait_for
 
 
+@pytest.fixture(autouse=True)
+def mic_permission_granted(app_module, monkeypatch):
+    """Never touch the real macOS permission system from tests."""
+    monkeypatch.setattr(app_module, "microphone_access", lambda: (True, None))
+
+
 def test_health_reports_environment(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "ollama_reachable", lambda timeout=0.5: False)
     body = client.get("/health").get_json()
@@ -235,3 +241,22 @@ def test_summary_errors_are_reported(client, app_module, monkeypatch, tmp_path):
     job_id = client.post("/summarize", json={"text": "t"}).get_json()["job_id"]
     assert wait_for(lambda: client.get(f"/job/{job_id}").get_json()["status"] == "error")
     assert "rejected the API key" in client.get(f"/job/{job_id}").get_json()["error"]
+
+
+def test_denied_microphone_is_explained_and_system_audio_still_recorded(client, app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "microphone_access", lambda: (False, "microphone access is off"))
+    _use_fake_sources(app_module, monkeypatch, tone_source(1, 1), tone_source(900, 3))
+    client.post("/desktop-record/start", json={})
+    assert client.get("/desktop-record/status").get_json()["channels"]["mic"]["error"] == "microphone access is off"
+    assert wait_for(lambda: client.get("/desktop-record/status").get_json()["channels"]["sys"]["frames"] == 3072)
+    res = client.post("/desktop-record/stop")
+    assert res.status_code == 200
+    assert json.loads(res.headers["X-Recording-Errors"]) == {"mic": "microphone access is off"}
+
+
+def test_completely_silent_system_audio_gets_a_hint(client, app_module, monkeypatch):
+    _use_fake_sources(app_module, monkeypatch, tone_source(5, 3), tone_source(0, 3))
+    client.post("/desktop-record/start", json={})
+    assert wait_for(lambda: client.get("/desktop-record/status").get_json()["channels"]["sys"]["frames"] == 3072)
+    res = client.post("/desktop-record/stop")
+    assert "Screen & System Audio Recording" in json.loads(res.headers["X-Recording-Errors"])["sys"]

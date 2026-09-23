@@ -145,11 +145,17 @@ class StateFile:
         os.replace(tmp, self.path)
 
 
+def default_python():
+    """Interpreter to install into and run helpers with: the per-user venv when the
+    app runs embedded (macOS), else the running interpreter."""
+    return os.environ.get("WORKBENCH_VENV_PYTHON") or sys.executable
+
+
 class PipInstaller:
     """Installs into the running interpreter's environment; prefers uv, falls back to pip."""
 
-    def __init__(self, python=sys.executable):
-        self.python = python
+    def __init__(self, python=None):
+        self.python = python or default_python()
 
     def base_cmd(self):
         if importlib.util.find_spec("uv") is not None:
@@ -175,7 +181,8 @@ def run_streaming(cmd, log):
 # ── the plan ─────────────────────────────────────────────────────────────────
 
 def build_plan(hw, installer=None, state=None, hf_token_set=lambda: bool(os.getenv("HF_TOKEN")),
-               requirements_file=REQUIREMENTS_FILE, python=sys.executable):
+               requirements_file=REQUIREMENTS_FILE, python=None):
+    python = python or default_python()
     installer = installer or PipInstaller(python)
     state = state or StateFile()
     variant = torch_variant(hw)

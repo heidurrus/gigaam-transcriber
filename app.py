@@ -22,7 +22,9 @@ from core import macos_audio, settings
 from core.summarize import SummaryError, summarize
 from core.jobs import JobStore, SerialQueue
 from core.paths import models_dir, recordings_dir, use_app_model_cache
-from core.recorder import SAMPLE_RATE as REC_SAMPLE_RATE, DualChannelRecorder, mix_wavs
+from core.macos_permissions import microphone_access
+from core.realtime import realtime
+from core.recorder import SAMPLE_RATE as REC_SAMPLE_RATE, DualChannelRecorder, mix_wavs, wav_peak
 from core.security import install_local_only_guard
 from core.transcripts import (MAX_BYTES as MAX_TRANSCRIPT_BYTES, TranscriptError,
                               is_transcript_file, parse_transcript)
@@ -321,6 +323,12 @@ def audio_devices():
         return jsonify({"error": str(e)}), 500
 
 
+MIC_NO_AUDIO = ("the microphone delivers no audio. Check that it's connected and, on macOS, allowed in "
+                "System Settings → Privacy & Security → Microphone")
+SYS_SILENT = ("system audio was silent the whole time. If the call's audio was playing, allow "
+              "Requirements Workbench in System Settings → Privacy & Security → Screen & System Audio Recording")
+
+
 def _mic_source(device_index):
     def source(stop):
         import sounddevice as sd
@@ -328,7 +336,8 @@ def _mic_source(device_index):
             while not stop.is_set():
                 chunk, _ = s.read(1024)
                 yield chunk[:, 0].copy()
-    return source
+    # Never block the recorder; fail with a reason if the mic stays silent (e.g. no permission).
+    return realtime(source, REC_SAMPLE_RATE, no_audio_error=MIC_NO_AUDIO)
 
 
 def system_audio_support():
@@ -350,9 +359,14 @@ def _system_source():
         if not ok:
             return reason
         try:
-            return macos_audio.SystemAudioTap().open()
+            tap = macos_audio.SystemAudioTap().open()
         except Exception as e:
             return f"system audio unavailable: {e}"
+        # The tap delivers nothing while nothing plays: fill that with silence so the
+        # system channel stays in step with the mic, and Stop never waits on it.
+        wrapped = realtime(tap, REC_SAMPLE_RATE, fill_silence=True)
+        wrapped.close = tap.close
+        return wrapped
 
     def source(stop):
         import numpy as np
@@ -363,7 +377,7 @@ def _system_source():
             while not stop.is_set():
                 chunk = rec.record(numframes=1024)[:, 0]
                 yield (np.clip(chunk, -1.0, 1.0) * 32767).astype("int16")
-    return source
+    return realtime(source, REC_SAMPLE_RATE, fill_silence=True)
 
 
 def _close_active_tap():
@@ -381,16 +395,20 @@ def desktop_record_start():
     global _recorder, _active_tap
     data = request.get_json(silent=True) or {}
     mic_index = data.get("mic_device")  # sounddevice index or None for default
+    if _recorder is not None and _recorder.recording:
+        return jsonify({"error": "A recording is already in progress"}), 409
+
+    # macOS: ask for the microphone first (shows the system prompt once), outside the
+    # lock because the user may take a while to answer.
+    mic_ok, mic_reason = microphone_access()
+    mic = _mic_source(mic_index) if mic_ok else mic_reason
 
     with _recorder_lock:
         if _recorder is not None and _recorder.recording:
             return jsonify({"error": "A recording is already in progress"}), 409
         sys_source = _system_source()
         _active_tap = sys_source if hasattr(sys_source, "close") else None
-        _recorder = DualChannelRecorder(
-            recordings_dir(),
-            {"mic": _mic_source(mic_index), "sys": sys_source},
-        )
+        _recorder = DualChannelRecorder(recordings_dir(), {"mic": mic, "sys": sys_source})
         recording_id = _recorder.start()
     return jsonify({"ok": True, "recording_id": recording_id})
 
@@ -413,6 +431,8 @@ def desktop_record_stop():
         result = _recorder.stop()
         _close_active_tap()
 
+    if result.get("sys") and "sys" not in result["errors"] and wav_peak(result["sys"]) == 0:
+        result["errors"]["sys"] = SYS_SILENT
     captured = [result[c] for c in ("sys", "mic") if result.get(c)]
     if not captured:
         details = "; ".join(f"{c}: {e}" for c, e in result["errors"].items())
