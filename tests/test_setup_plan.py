@@ -117,5 +117,5 @@ def test_model_step_records_completion(tmp_path, monkeypatch):
     monkeypatch.setattr(setup_plan, "run_streaming", lambda cmd, log: ran.append(cmd))
     assert not steps["model"].check()
     steps["model"].install(lambda line: None)
-    assert "gigaam.load_model('v3_e2e_rnnt')" in ran[0][-1]
+    assert "gigaam.load_model('v3_e2e_rnnt', download_root=" in ran[0][-1]
     assert steps["model"].check()

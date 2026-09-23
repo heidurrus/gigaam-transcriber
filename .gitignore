@@ -10,3 +10,5 @@ build/
 .venv/
 venv/
 installer/Output/
+build/
+packaging/.cache/

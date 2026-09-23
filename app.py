@@ -20,11 +20,12 @@ from flask import Flask, request, jsonify, send_file, send_from_directory
 
 from core.ffmpeg import ensure_ffmpeg_on_path
 from core.jobs import JobStore, SerialQueue
-from core.paths import recordings_dir
+from core.paths import models_dir, recordings_dir, use_app_model_cache
 from core.recorder import SAMPLE_RATE as REC_SAMPLE_RATE, DualChannelRecorder, mix_wavs
 from core.security import install_local_only_guard
 
 load_dotenv()
+use_app_model_cache()
 
 hf_token = os.getenv("HF_TOKEN")
 if hf_token:
@@ -89,7 +90,7 @@ def convert_to_wav(input_path):
 def get_model(name, device):
     with _model_lock:
         if name not in _models:
-            _models[name] = gigaam.load_model(name)
+            _models[name] = gigaam.load_model(name, download_root=models_dir("gigaam"))
         return _models[name].to(device)
 
 

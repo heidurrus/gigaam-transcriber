@@ -126,8 +126,15 @@ def open_window_or_browser(browser_mode):
     import os
     storage = os.path.join(app_data_dir(), "webview")
     os.makedirs(storage, exist_ok=True)
-    webview.create_window(APP_TITLE, URL, width=1200, height=820, min_size=(800, 600), js_api=_Api())
-    webview.start(private_mode=False, storage_path=storage)  # blocks until the window closes
+    try:
+        webview.create_window(APP_TITLE, URL, width=1200, height=820, min_size=(800, 600), js_api=_Api())
+        webview.start(private_mode=False, storage_path=storage)  # blocks until the window closes
+    except Exception as e:
+        # e.g. WebView2 runtime missing on an older Windows 10: fall back to the browser
+        # rather than exiting without showing anything (FR-PLAT-01 AC5).
+        print(f"  Desktop window unavailable ({e}); opening in the browser instead.")
+        webbrowser.open(URL)
+        return False
     return True
 
 

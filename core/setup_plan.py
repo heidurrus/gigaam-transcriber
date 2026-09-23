@@ -18,7 +18,7 @@ from typing import Callable, Optional
 
 from core.ffmpeg import find_ffmpeg
 from core.hardware import torch_variant
-from core.paths import app_data_dir
+from core.paths import app_data_dir, models_dir
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REQUIREMENTS_FILE = os.path.join(ROOT, "requirements.txt")
@@ -184,7 +184,9 @@ def build_plan(hw, installer=None, state=None, hf_token_set=lambda: bool(os.gete
 
     def download_model(log):
         log(f"Downloading speech model {DEFAULT_ASR_MODEL} (~500 MB, once)…")
-        run_streaming([python, "-c", f"import gigaam; gigaam.load_model({DEFAULT_ASR_MODEL!r}); print('model ready')"], log)
+        root = models_dir("gigaam")
+        run_streaming([python, "-c", f"import gigaam; gigaam.load_model({DEFAULT_ASR_MODEL!r}, "
+                                     f"download_root={root!r}); print('model ready')"], log)
         state.set(f"model:{DEFAULT_ASR_MODEL}")
 
     return [

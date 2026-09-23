@@ -26,3 +26,18 @@ def recordings_dir():
     path = os.path.join(app_data_dir(), "recordings")
     os.makedirs(path, exist_ok=True)
     return path
+
+
+def models_dir(kind):
+    """Downloaded model weights live with the app's data, so uninstall can remove them.
+
+    kind: "gigaam" or "huggingface".
+    """
+    path = os.path.join(app_data_dir(), "models", kind)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def use_app_model_cache():
+    """Point Hugging Face downloads (pyannote) at the app's model folder, unless the user chose one."""
+    os.environ.setdefault("HF_HOME", models_dir("huggingface"))
