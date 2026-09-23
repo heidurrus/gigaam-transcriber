@@ -12,3 +12,4 @@ venv/
 installer/Output/
 build/
 packaging/.cache/
+.DS_Store
