@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — Increment 0: stable base (2026-09-23)
+## 1.1.0 — Increment 0: stable base (2026-09-23)
 
 First step from GigaAM Transcriber towards Requirements Workbench
 (`docs/specs/requirements-workbench-spec.md`, §12.2 increment 0). No new

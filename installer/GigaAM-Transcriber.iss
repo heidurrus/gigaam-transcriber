@@ -50,7 +50,7 @@ Source: "{#StageDir}\python\*"; DestDir: "{app}\python"; Flags: ignoreversion re
 Source: "{#StageDir}\app\*";    DestDir: "{app}\app";    Flags: ignoreversion recursesubdirs createallsubdirs
 
 [InstallDelete]
-; Files from the pre-0.1 layout (Python-on-PATH + .bat launchers)
+; Files from the 1.0 layout (Python-on-PATH + .bat launchers)
 Type: files; Name: "{app}\setup.bat"
 Type: files; Name: "{app}\launcher.bat"
 Type: files; Name: "{app}\launcher-browser.bat"
