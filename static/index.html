@@ -543,10 +543,10 @@
   </div>
 
   <div class="drop-zone" id="drop-zone">
-    <input type="file" id="file-input" accept="audio/*,video/*" />
+    <input type="file" id="file-input" accept="audio/*,video/*,.vtt,.srt,.txt,.docx,.json,.md" />
     <div class="drop-icon">🎙</div>
-    <div class="drop-text">Drop an audio file here, or <span>browse</span></div>
-    <div class="drop-text" style="margin-top:4px;font-size:0.8rem;">WAV, MP3, FLAC, OGG, M4A, WebM…</div>
+    <div class="drop-text">Drop an audio file or a transcript here, or <span>browse</span></div>
+    <div class="drop-text" style="margin-top:4px;font-size:0.8rem;">Audio: WAV, MP3, FLAC, OGG, M4A, WebM… · Transcripts: Teams/Zoom .vtt, .srt, .docx, .txt</div>
     <div class="file-name" id="file-name"></div>
   </div>
 
@@ -831,10 +831,28 @@
 
   let selectedFile = null;
 
+  const TRANSCRIPT_EXTS = [".vtt", ".srt", ".txt", ".docx", ".json", ".md"];
+  const isTranscriptFile = name => TRANSCRIPT_EXTS.some(ext => name.toLowerCase().endsWith(ext));
+
   function setFile(file) {
     selectedFile = file;
-    fileNameEl.textContent = file.name;
+    const transcript = isTranscriptFile(file.name);
+    fileNameEl.textContent = transcript ? `${file.name} — transcript, no speech recognition needed` : file.name;
+    transcribeBtn.textContent = transcript ? "Open transcript" : "Transcribe";
     transcribeBtn.disabled = false;
+  }
+
+  // Imported transcripts come from outside (client files), so never inject them as HTML.
+  function esc(value) {
+    return String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  function fmtTime(seconds) {
+    if (seconds === undefined || seconds === null || seconds === "") return "";
+    const total = Math.floor(Number(seconds));
+    const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), s = total % 60;
+    const mm = String(m).padStart(2, "0"), ss = String(s).padStart(2, "0");
+    return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
   }
 
   fileInput.addEventListener("change", () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
@@ -867,7 +885,6 @@
   async function pollJob(job_id) {
     const start = Date.now();
     while (true) {
-      await new Promise(r => setTimeout(r, 1500));
       const elapsed = Math.round((Date.now() - start) / 1000);
 
       const res = await fetch(`/job/${job_id}`);
@@ -876,6 +893,7 @@
       showProgress(job.progress || 0, job.progress_msg || "Processing…", elapsed);
 
       if (job.status !== "processing") return job;
+      await new Promise(r => setTimeout(r, 1500));
     }
   }
 
@@ -890,7 +908,7 @@
 
     statusTarget.className = "status";
     statusTarget.textContent = "";
-    showProgress(0, "Uploading file…", 0);
+    showProgress(0, isTranscriptFile(file.name) ? "Reading transcript…" : "Uploading file…", 0);
 
     const submitRes = await fetch("/transcribe", { method: "POST", body: formData });
     const submitted = await submitRes.json();
@@ -914,7 +932,10 @@
 
     const data = job.result;
 
-    statusTarget.textContent = "Done.";
+    statusTarget.textContent = data.imported
+      ? `Imported ${data.imported.format.toUpperCase()} transcript: ${data.segments?.length || 0} segments` +
+        (data.diarized ? `, ${new Set(data.segments.map(s => s.speaker).filter(Boolean)).size} speakers` : "")
+      : "Done.";
     resultText.textContent = data.text;
     resultBox.style.display = "block";
     wordsTable.style.display = "none";
@@ -926,7 +947,7 @@
       wordsBody.innerHTML = "";
       data.words.forEach((w, i) => {
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${i+1}</td><td>${w.text}</td><td>${w.start}s</td><td>${w.end}s</td>`;
+        tr.innerHTML = `<td>${i+1}</td><td>${esc(w.text)}</td><td>${esc(fmtTime(w.start))}</td><td>${esc(fmtTime(w.end))}</td>`;
         wordsBody.appendChild(tr);
       });
       wordsTable.style.display = "block";
@@ -943,12 +964,12 @@
         if (hasSpeakers) {
           const c = getSpeakerColor(seg.speaker);
           tr.innerHTML = `<td>${i+1}</td>
-            <td><span class="speaker-badge" style="background:${c.bg};color:${c.text}">${seg.speaker}</span></td>
-            <td style="white-space:nowrap">${seg.start}s</td>
-            <td style="white-space:nowrap">${seg.end}s</td>
-            <td>${seg.text}</td>`;
+            <td><span class="speaker-badge" style="background:${c.bg};color:${c.text}">${esc(seg.speaker || "—")}</span></td>
+            <td style="white-space:nowrap">${esc(fmtTime(seg.start))}</td>
+            <td style="white-space:nowrap">${esc(fmtTime(seg.end))}</td>
+            <td>${esc(seg.text)}</td>`;
         } else {
-          tr.innerHTML = `<td>${i+1}</td><td>${seg.start}s</td><td>${seg.end}s</td><td>${seg.text}</td>`;
+          tr.innerHTML = `<td>${i+1}</td><td>${esc(fmtTime(seg.start))}</td><td>${esc(fmtTime(seg.end))}</td><td>${esc(seg.text)}</td>`;
         }
         segmentsBody.appendChild(tr);
       });

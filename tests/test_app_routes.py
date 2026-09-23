@@ -4,6 +4,7 @@ import os
 import time
 
 import numpy as np
+import pytest
 
 from tests.test_recorder import read_wav, tone_source, wait_for
 
@@ -142,3 +143,22 @@ def test_transcribe_error_is_reported(client, app_module, monkeypatch):
     job_id = res.get_json()["job_id"]
     assert wait_for(lambda: client.get(f"/job/{job_id}").get_json()["status"] == "error")
     assert client.get(f"/job/{job_id}").get_json()["error"] == "model exploded"
+
+
+def test_transcript_upload_skips_speech_recognition(client, app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "_transcribe", lambda *a: pytest.fail("must not run ASR for a transcript"))
+    vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:02.500\n<v Иван Петров>Добрый день</v>\n".encode()
+    res = client.post("/transcribe", data={"audio": (io.BytesIO(vtt), "Meeting.vtt")},
+                      content_type="multipart/form-data")
+    assert res.status_code == 200
+    job = client.get(f"/job/{res.get_json()['job_id']}").get_json()
+    assert job["status"] == "done"                      # immediately, no queue
+    assert job["result"]["segments"] == [{"speaker": "Иван Петров", "start": 1.0, "end": 2.5, "text": "Добрый день"}]
+    assert job["result"]["imported"] == {"format": "vtt", "filename": "Meeting.vtt"}
+
+
+def test_unreadable_transcript_is_a_clear_400(client):
+    res = client.post("/transcribe", data={"audio": (io.BytesIO(b"not a zip"), "notes.docx")},
+                      content_type="multipart/form-data")
+    assert res.status_code == 400
+    assert "Could not read this transcript" in res.get_json()["error"]

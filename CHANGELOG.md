@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.0 (2026-09-23)
+
+- **Import a transcript you already have.** Drop it where you drop audio: no speech
+  recognition, it opens instantly with speakers and timestamps kept. Supported:
+  - Microsoft Teams: `.vtt` or `.docx` transcript export (speaker names kept)
+  - Zoom / Google Meet: `.vtt`
+  - Subtitles: `.srt`
+  - Plain text: `Name: text` lines, timestamped lines, or text copied from this app
+  - This app's own `.json` result
+  - Russian text in any common encoding (UTF-8, UTF-16, Windows-1251)
+- Transcript tables show times as `mm:ss`, and file content is always shown as text,
+  never interpreted as HTML (important for files from outside).
+- Results appear without the 1.5 s polling delay.
+
 ## 1.1.1 (2026-09-23)
 
 - **Fixed: "Access to 127.0.0.1 was denied / HTTP ERROR 403" on startup.** The app used
