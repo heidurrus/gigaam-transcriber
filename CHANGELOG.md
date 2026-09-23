@@ -1,6 +1,20 @@
 # Changelog
 
-## 1.2.0 (2026-09-23)
+## 2.1.0 (2026-09-23)
+
+- **Redesigned interface.**
+  - Three collapsible sections: **Source** (upload or record), **Transcription options**
+    (shared by both, collapsed to a one-line summary) and **Result** (summary, transcript,
+    segments, word timestamps, each collapsible). The app remembers what you collapsed.
+  - One spacing scale and one type scale across the page, Settings and the Setup screen.
+    One set of components: section, panel, field, button, status.
+  - Scales from phones (360 px) to wide screens: panels sit side by side when there's
+    room and stack when there isn't; tables scroll instead of breaking the layout;
+    Settings becomes a full-screen sheet on small windows.
+  - Light and dark themes follow the system and use the prototype's palette.
+    System fonts only, so nothing is fetched from the internet.
+- **Fixed:** the microphone list could be empty, and it offered "System audio" as a
+  microphone (system audio is always recorded on its own).
 
 - **AI summaries.** A **Summarize** button under every transcript (recorded, uploaded
   or imported) writes a summary in the transcript's language: overview, key points,
@@ -36,7 +50,7 @@
   never interpreted as HTML (important for files from outside).
 - Results appear without the 1.5 s polling delay.
 
-## 1.1.1 (2026-09-23)
+## 1.1.1 (2026-09-23), published in release v2.0
 
 - **Fixed: "Access to 127.0.0.1 was denied / HTTP ERROR 403" on startup.** The app used
   port 5000, which the macOS AirPlay Receiver (and sometimes other software) already
@@ -47,7 +61,7 @@
   opening the app.
 - Closing or killing the app always cleans up its instance record.
 
-## 1.1.0 — Increment 0: stable base (2026-09-23)
+## 1.1.0 — Increment 0: stable base (2026-09-23), published in release v2.0
 
 First step from GigaAM Transcriber towards Requirements Workbench
 (`docs/specs/requirements-workbench-spec.md`, §12.2 increment 0). No new

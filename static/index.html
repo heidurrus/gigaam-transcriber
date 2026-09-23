@@ -5,702 +5,477 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Requirements Workbench</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    /* ── Design tokens ───────────────────────────────────────────────────
+       Palette and type follow docs/prototype. Only these values are used
+       below: spacing comes from --s-*, type sizes from --t-*. */
+    :root {
+      --paper: #EDEFEC; --panel: #FFFFFF; --sunk: #F5F6F3;
+      --ink: #191C1A; --ink-2: #5E645F; --ink-3: #8A908B;
+      --rule: #DCDFDA; --rule-2: #C6CAC4;
+      --accent: #2B5B78; --accent-ink: #FFFFFF; --accent-bg: #E2EBF1;
+      --danger: #9E3626; --danger-bg: #F6E4E0;
+      --warn: #8A6110; --warn-bg: #F6EDDC;
+      --ok: #3A6A4B; --ok-bg: #E3EEE5;
+      --focus: #2B5B78;
 
+      --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px; --s-6: 32px; --s-7: 48px;
+      --t-xs: 0.75rem; --t-sm: 0.8125rem; --t-md: 0.875rem; --t-lg: 1rem; --t-xl: 1.25rem;
+      --r-sm: 4px; --r-md: 6px; --r-lg: 8px;
+      --control-h: 36px;
+      --gutter: clamp(var(--s-4), 4vw, var(--s-6));
+
+      --sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      color-scheme: light;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --paper: #15181A; --panel: #1D2124; --sunk: #22262A;
+        --ink: #E6E9E6; --ink-2: #A2A9A5; --ink-3: #7C837E;
+        --rule: #2E3337; --rule-2: #3C4247;
+        --accent: #8FBBD6; --accent-ink: #11202A; --accent-bg: #23333D;
+        --danger: #E0917F; --danger-bg: #3A2622;
+        --warn: #D9AC5C; --warn-bg: #39301F;
+        --ok: #8CBE9B; --ok-bg: #23332A;
+        --focus: #8FBBD6;
+        color-scheme: dark;
+      }
+    }
+
+    /* ── Base ─────────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; }
     body {
-      font-family: system-ui, -apple-system, sans-serif;
-      background: #0f1117;
-      color: #e2e8f0;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 40px 16px;
-      gap: 16px;
+      background: var(--paper); color: var(--ink);
+      font: 400 var(--t-md)/1.55 var(--sans);
+      -webkit-font-smoothing: antialiased;
     }
-
-    h1 {
-      font-size: 1.8rem;
-      font-weight: 700;
-      margin-bottom: 8px;
-      letter-spacing: -0.5px;
-    }
-
-    .subtitle {
-      color: #94a3b8;
-      font-size: 0.9rem;
-      margin-bottom: 20px;
-    }
-
-    .card {
-      background: #1e2433;
-      border: 1px solid #2d3748;
-      border-radius: 12px;
-      padding: 28px;
-      width: 100%;
-      max-width: 720px;
-    }
-
-    .card-title {
-      font-size: 0.75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #94a3b8;
-      margin-bottom: 20px;
-    }
-
-    .row {
-      display: flex;
-      gap: 12px;
-      margin-bottom: 20px;
-      flex-wrap: wrap;
-    }
-
-    .field {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      flex: 1;
-      min-width: 160px;
-    }
-
-    label {
-      font-size: 0.8rem;
-      color: #94a3b8;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    select {
-      background: #0f1117;
-      color: #e2e8f0;
-      border: 1px solid #2d3748;
-      border-radius: 8px;
-      padding: 10px 12px;
-      font-size: 0.9rem;
-      cursor: pointer;
-      outline: none;
-    }
-
-    select:focus { border-color: #4f8ef7; }
-
-    .toggles {
-      display: flex;
-      gap: 24px;
-      margin-bottom: 20px;
-      flex-wrap: wrap;
-    }
-
-    .toggle-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .toggle {
-      position: relative;
-      width: 40px;
-      height: 22px;
-      cursor: pointer;
-      flex-shrink: 0;
-    }
-
-    .toggle input { display: none; }
-
-    .toggle-track {
-      position: absolute;
-      inset: 0;
-      background: #2d3748;
-      border-radius: 999px;
-      transition: background 0.2s;
-    }
-
-    .toggle input:checked + .toggle-track { background: #4f8ef7; }
-
-    .toggle-thumb {
-      position: absolute;
-      top: 3px;
-      left: 3px;
-      width: 16px;
-      height: 16px;
-      background: #fff;
-      border-radius: 50%;
-      transition: transform 0.2s;
-    }
-
-    .toggle input:checked ~ .toggle-thumb { transform: translateX(18px); }
-
-    .drop-zone {
-      border: 2px dashed #2d3748;
-      border-radius: 10px;
-      padding: 36px 20px;
-      text-align: center;
-      cursor: pointer;
-      transition: border-color 0.2s, background 0.2s;
-      margin-bottom: 20px;
-      position: relative;
-    }
-
-    .drop-zone:hover, .drop-zone.drag-over {
-      border-color: #4f8ef7;
-      background: rgba(79, 142, 247, 0.05);
-    }
-
-    .drop-zone input[type="file"] {
-      position: absolute;
-      inset: 0;
-      opacity: 0;
-      cursor: pointer;
-      width: 100%;
-      height: 100%;
-    }
-
-    .drop-icon { font-size: 2.2rem; margin-bottom: 10px; }
-    .drop-text { color: #94a3b8; font-size: 0.9rem; }
-    .drop-text span { color: #4f8ef7; }
-
-    .file-name {
-      margin-top: 8px;
-      font-size: 0.85rem;
-      color: #60a5fa;
-      font-weight: 500;
-    }
-
-    button {
-      width: 100%;
-      padding: 13px;
-      background: #4f8ef7;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s, opacity 0.2s;
-    }
-
-    button:hover { background: #3b7de8; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-
-    .btn-secondary {
-      background: #2d3748;
-      font-size: 0.9rem;
-      padding: 10px;
-    }
-
-    .btn-secondary:hover { background: #3d4a60; }
-
-    .btn-danger {
-      background: #dc2626;
-    }
-
-    .btn-danger:hover { background: #b91c1c; }
-
-    .status {
-      margin-top: 16px;
-      font-size: 0.85rem;
-      color: #94a3b8;
-      min-height: 20px;
-      text-align: center;
-    }
-
-    .status.error { color: #f87171; }
-
-    /* Recording card */
-    .rec-controls {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      margin-bottom: 16px;
-    }
-
-    .rec-controls button { width: auto; flex: 1; }
-
-    .rec-indicator {
-      display: none;
-      align-items: center;
-      gap: 8px;
-      font-size: 0.9rem;
-      color: #f87171;
-      font-weight: 600;
-      margin-bottom: 16px;
-    }
-
-    .rec-indicator.active { display: flex; }
-
-    .rec-dot {
-      width: 10px;
-      height: 10px;
-      background: #f87171;
-      border-radius: 50%;
-      animation: pulse 1s ease-in-out infinite;
-      flex-shrink: 0;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.3; }
-    }
-
-    .rec-ready {
-      display: none;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .rec-ready.show { display: flex; }
-
-    .rec-ready audio {
-      width: 100%;
-      border-radius: 8px;
-    }
-
-    .rec-actions {
-      display: flex;
-      gap: 10px;
-    }
-
-    .rec-actions button { flex: 1; }
-
-    /* Results */
-    .result-box {
-      margin-top: 28px;
-      display: none;
-    }
-
-    .result-label {
-      font-size: 0.8rem;
-      color: #94a3b8;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 8px;
-    }
-
-    .result-text {
-      background: #0f1117;
-      border: 1px solid #2d3748;
-      border-radius: 8px;
-      padding: 16px;
-      font-size: 0.95rem;
-      line-height: 1.7;
-      white-space: pre-wrap;
-      word-break: break-word;
-      max-height: 45vh;
-      overflow-y: auto;   /* long transcripts scroll inside, so everything else stays in reach */
-    }
-
-    .copy-btn {
-      width: auto;
-      margin-top: 10px;
-      padding: 8px 18px;
-      background: #2d3748;
-      font-size: 0.85rem;
-      font-weight: 500;
-      border-radius: 6px;
-    }
-
-    .copy-btn:hover { background: #3d4a60; }
-
-    .words-table, .segments-table {
-      margin-top: 20px;
-      display: none;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.88rem;
-    }
-
-    th {
-      text-align: left;
-      padding: 8px 12px;
-      color: #94a3b8;
-      border-bottom: 1px solid #2d3748;
-      font-weight: 500;
-      font-size: 0.78rem;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    td {
-      padding: 7px 12px;
-      border-bottom: 1px solid #1a2030;
-      vertical-align: top;
-    }
-
-    tr:last-child td { border-bottom: none; }
-    tr:hover td { background: rgba(79, 142, 247, 0.04); }
-
-    .speaker-badge {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-size: 0.78rem;
-      font-weight: 600;
-      white-space: nowrap;
-    }
-
-    .progress-wrap {
-      margin-top: 16px;
-      display: none;
-    }
-
-    .progress-wrap.show { display: block; }
-
-    .progress-bar-bg {
-      background: #2d3748;
-      border-radius: 999px;
-      height: 6px;
-      overflow: hidden;
-      margin-bottom: 8px;
-    }
-
-    .progress-bar-fill {
-      height: 100%;
-      background: #4f8ef7;
-      border-radius: 999px;
-      transition: width 0.4s ease;
-      width: 0%;
-    }
-
-    .progress-msg {
-      font-size: 0.82rem;
-      color: #94a3b8;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .spinner {
-      display: inline-block;
-      width: 12px;
-      height: 12px;
-      border: 2px solid #4f8ef7;
-      border-top-color: transparent;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-      flex-shrink: 0;
-    }
-
-    @keyframes spin { to { transform: rotate(360deg); } }
+    h1, h2, h3, p { margin: 0; }
+    a { color: var(--accent); }
+    code, .mono { font-family: var(--mono); font-size: 0.92em; }
+    button, input, select { font: inherit; color: inherit; }
+    :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
     .hidden { display: none !important; }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
-    #settings-btn {
-      position: fixed;
-      top: 14px;
-      right: 16px;
-      background: #1e2433;
-      border: 1px solid #2d3748;
-      border-radius: 8px;
-      color: #94a3b8;
-      cursor: pointer;
-      padding: 8px 10px;
-      font-size: 1.1rem;
-      line-height: 1;
-      z-index: 50;
+    /* ── Layout ───────────────────────────────────────────────────────── */
+    .app { width: min(1080px, 100%); margin: 0 auto; padding: var(--s-5) var(--gutter) var(--s-7); }
+    .app-header { display: flex; align-items: flex-start; gap: var(--s-4); margin-bottom: var(--s-5); }
+    .app-header .grow { flex: 1; min-width: 0; }
+    .app-title { font-size: var(--t-xl); font-weight: 600; letter-spacing: -0.01em; }
+    .app-sub { margin-top: var(--s-1); color: var(--ink-2); font-size: var(--t-sm); }
+    .stack > * + * { margin-top: var(--s-4); }
+    .grid-2 { display: grid; gap: var(--s-4); grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
+    .row { display: flex; flex-wrap: wrap; gap: var(--s-3); align-items: flex-end; }
+    .row > .grow { flex: 1 1 200px; min-width: 0; }
+
+    /* ── Section (collapsible) ────────────────────────────────────────── */
+    .section { background: var(--panel); border: 1px solid var(--rule); border-radius: var(--r-lg); }
+    .section + .section { margin-top: var(--s-4); }
+    .section > summary {
+      display: flex; align-items: center; gap: var(--s-3);
+      padding: var(--s-3) var(--s-4); cursor: pointer; list-style: none; user-select: none;
+      border-radius: var(--r-lg);
     }
-    #settings-btn:hover { color: #e2e8f0; border-color: #4f8ef7; }
+    .section > summary::-webkit-details-marker { display: none; }
+    .section > summary:hover { background: var(--sunk); }
+    .section-title { font-size: var(--t-lg); font-weight: 600; }
+    .section-meta { color: var(--ink-3); font-size: var(--t-sm); margin-left: auto; text-align: right; }
+    .chevron { width: 16px; height: 16px; flex: none; color: var(--ink-3); transition: transform .15s ease; }
+    details[open] > summary .chevron { transform: rotate(90deg); }
+    .section-body { padding: 0 var(--s-4) var(--s-4); }
+    .section[open] > summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 
+    /* Sub-section: same behaviour, lighter weight (inside a section) */
+    .sub { border-top: 1px solid var(--rule); }
+    .sub > summary {
+      display: flex; align-items: center; gap: var(--s-2);
+      padding: var(--s-3) 0; cursor: pointer; list-style: none; user-select: none;
+    }
+    .sub > summary::-webkit-details-marker { display: none; }
+    .sub-title { font-size: var(--t-sm); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-2); }
+    .sub-body { padding-bottom: var(--s-4); }
+
+    /* ── Panel (a unit inside a section) ──────────────────────────────── */
+    .panel { border: 1px solid var(--rule); border-radius: var(--r-md); padding: var(--s-4); background: var(--panel); min-width: 0; }
+    .panel-title { font-size: var(--t-md); font-weight: 600; margin-bottom: var(--s-1); }
+    .panel-desc { color: var(--ink-2); font-size: var(--t-sm); margin-bottom: var(--s-4); }
+
+    /* ── Fields & controls ────────────────────────────────────────────── */
+    .field { display: flex; flex-direction: column; gap: var(--s-1); min-width: 0; }
+    .label { font-size: var(--t-sm); font-weight: 500; color: var(--ink-2); }
+    .hint { font-size: var(--t-xs); color: var(--ink-3); line-height: 1.5; }
+    .input, .select {
+      height: var(--control-h); width: 100%; padding: 0 var(--s-3);
+      background: var(--panel); border: 1px solid var(--rule-2); border-radius: var(--r-md);
+    }
+    .input { font-family: var(--mono); font-size: var(--t-sm); }
+    .input:focus, .select:focus { outline: none; border-color: var(--focus); box-shadow: 0 0 0 2px var(--accent-bg); }
+    .input-row { display: flex; gap: var(--s-2); }
+    .input-row .input { flex: 1; min-width: 0; }
+
+    .seg { display: inline-flex; border: 1px solid var(--rule-2); border-radius: var(--r-md); overflow: hidden; height: var(--control-h); }
+    .seg button { border: 0; background: var(--panel); color: var(--ink-2); padding: 0 var(--s-4); cursor: pointer; }
+    .seg button + button { border-left: 1px solid var(--rule-2); }
+    .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+    .seg button:disabled { color: var(--ink-3); cursor: not-allowed; }
+
+    .check { display: inline-flex; align-items: center; gap: var(--s-2); cursor: pointer; font-size: var(--t-md); min-height: var(--control-h); }
+    .check .hint { margin-left: var(--s-1); }
+    .switch {
+      appearance: none; -webkit-appearance: none; flex: none; margin: 0;
+      width: 32px; height: 18px; border-radius: 9px; background: var(--rule-2); position: relative; cursor: pointer;
+      transition: background .15s ease;
+    }
+    .switch::after {
+      content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%;
+      background: var(--panel); transition: transform .15s ease;
+    }
+    .switch:checked { background: var(--accent); }
+    .switch:checked::after { transform: translateX(14px); }
+
+    /* ── Buttons ──────────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: var(--s-2);
+      height: var(--control-h); padding: 0 var(--s-4); border-radius: var(--r-md);
+      border: 1px solid var(--rule-2); background: var(--panel); color: var(--ink);
+      font-size: var(--t-md); font-weight: 500; cursor: pointer; white-space: nowrap;
+    }
+    .btn:hover:not(:disabled) { border-color: var(--ink-3); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+    .btn-primary:hover:not(:disabled) { filter: brightness(1.08); border-color: var(--accent); }
+    .btn-danger { color: var(--danger); border-color: var(--danger); }
+    .btn-ghost { border-color: transparent; background: transparent; color: var(--ink-2); }
+    .btn-ghost:hover:not(:disabled) { background: var(--sunk); border-color: transparent; color: var(--ink); }
+    .btn-sm { height: 28px; padding: 0 var(--s-3); font-size: var(--t-sm); }
+    .btn-block { width: 100%; }
+    .icon-btn { width: var(--control-h); padding: 0; }
+    .icon-btn svg { width: 18px; height: 18px; }
+    .actions { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: center; }
+    .actions .spacer { flex: 1; }
+
+    /* ── Upload drop zone ─────────────────────────────────────────────── */
+    .drop-zone {
+      position: relative; border: 1px dashed var(--rule-2); border-radius: var(--r-md);
+      padding: var(--s-5) var(--s-4); text-align: center; background: var(--sunk); cursor: pointer;
+      transition: border-color .15s ease, background .15s ease;
+    }
+    .drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); background: var(--accent-bg); }
+    .drop-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+    .drop-title { font-weight: 500; }
+    .drop-title span { color: var(--accent); }
+    .drop-formats { margin-top: var(--s-1); font-size: var(--t-xs); color: var(--ink-3); }
+    .file-name { margin-top: var(--s-2); font-size: var(--t-sm); color: var(--ink); word-break: break-word; }
+    .file-name:empty { display: none; }
+
+    /* ── Recorder ─────────────────────────────────────────────────────── */
+    .rec-indicator { display: none; align-items: center; gap: var(--s-2); color: var(--danger); font-weight: 500; font-size: var(--t-sm); }
+    .rec-indicator.active { display: inline-flex; }
+    .rec-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); animation: pulse 1.2s ease-in-out infinite; }
+    @keyframes pulse { 50% { opacity: .3; } }
+    .rec-ready { display: none; }
+    .rec-ready.show { display: block; }
+    .rec-ready audio { width: 100%; height: 36px; margin-bottom: var(--s-3); }
+
+    /* ── Feedback ─────────────────────────────────────────────────────── */
+    .status { font-size: var(--t-sm); color: var(--ink-2); }
+    .status:empty { display: none; }
+    .status.error { color: var(--danger); background: var(--danger-bg); padding: var(--s-2) var(--s-3); border-radius: var(--r-md); }
+    .token-status { font-size: var(--t-xs); }
+    .token-status.set { color: var(--ok); }
+    .token-status.unset { color: var(--danger); }
+    .progress-wrap { display: none; margin-top: var(--s-4); }
+    .progress-wrap.show { display: block; }
+    .progress-bar-bg { height: 4px; background: var(--sunk); border-radius: 2px; overflow: hidden; }
+    .progress-bar-fill { height: 100%; width: 0; background: var(--accent); transition: width .3s ease; }
+    .progress-msg { display: flex; gap: var(--s-2); align-items: center; margin-top: var(--s-2); font-size: var(--t-sm); color: var(--ink-2); }
+    .progress-msg .elapsed { margin-left: auto; color: var(--ink-3); font-family: var(--mono); font-size: var(--t-xs); }
+    .spinner { width: 12px; height: 12px; border: 2px solid var(--rule-2); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; flex: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Results ──────────────────────────────────────────────────────── */
+    .result-text {
+      background: var(--sunk); border: 1px solid var(--rule); border-radius: var(--r-md);
+      padding: var(--s-3) var(--s-4); white-space: pre-wrap; word-break: break-word;
+      line-height: 1.7; max-height: 45vh; overflow-y: auto;
+    }
+    .summary-text { line-height: 1.65; word-break: break-word; }
+    .summary-text h3 { font-size: var(--t-md); font-weight: 600; margin: var(--s-4) 0 var(--s-1); }
+    .summary-text h3:first-child { margin-top: 0; }
+    .summary-text p { margin: var(--s-1) 0; }
+    .summary-text ul, .summary-text ol { margin: var(--s-1) 0 var(--s-2); padding-left: var(--s-5); }
+    .summary-text li + li { margin-top: 2px; }
+    .summary-text .ref { color: var(--ink-3); font-family: var(--mono); font-size: var(--t-xs); white-space: nowrap; }
+    .summary-meta { margin-top: var(--s-3); font-size: var(--t-xs); color: var(--ink-3); }
+    .summary-meta.status.error { font-size: var(--t-sm); }
+
+    .table-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: var(--r-md); max-height: 60vh; overflow-y: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
+    th { position: sticky; top: 0; background: var(--sunk); text-align: left; font-weight: 500; color: var(--ink-2); }
+    th, td { padding: var(--s-2) var(--s-3); border-bottom: 1px solid var(--rule); vertical-align: top; }
+    tr:last-child td { border-bottom: 0; }
+    td.num, td.time { font-family: var(--mono); font-size: var(--t-xs); color: var(--ink-3); white-space: nowrap; }
+    .speaker-badge { display: inline-block; padding: 1px var(--s-2); border-radius: var(--r-sm); font-size: var(--t-xs); font-weight: 500; white-space: nowrap; }
+    .spk-0 { background: var(--accent-bg); color: var(--accent); }
+    .spk-1 { background: var(--ok-bg); color: var(--ok); }
+    .spk-2 { background: var(--warn-bg); color: var(--warn); }
+    .spk-3 { background: var(--danger-bg); color: var(--danger); }
+    .spk-4 { background: var(--sunk); color: var(--ink); border: 1px solid var(--rule-2); }
+
+    /* ── Settings sheet ───────────────────────────────────────────────── */
     .modal-overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.6);
-      z-index: 100;
-      align-items: center;
-      justify-content: center;
+      display: none; position: fixed; inset: 0; z-index: 100;
+      background: rgba(10, 12, 14, .45); padding: var(--s-5) var(--s-4);
+      align-items: flex-start; justify-content: center; overflow-y: auto;
     }
     .modal-overlay.open { display: flex; }
-
     .modal {
-      background: #1e2433;
-      border: 1px solid #2d3748;
-      border-radius: 12px;
-      padding: 28px;
-      width: 100%;
-      max-width: 480px;
-      position: relative;
+      width: min(560px, 100%); background: var(--panel); border: 1px solid var(--rule);
+      border-radius: var(--r-lg); box-shadow: 0 12px 40px rgba(0, 0, 0, .18);
     }
-    .modal h2 {
-      font-size: 1rem;
-      font-weight: 600;
-      margin-bottom: 20px;
+    .modal-head { display: flex; align-items: center; padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--rule); }
+    .modal-head h2 { font-size: var(--t-lg); font-weight: 600; flex: 1; }
+    .modal .sub { margin: 0 var(--s-4); }
+    .modal .sub:first-of-type { border-top: 0; }
+    .modal .sub-body > * + * { margin-top: var(--s-3); }
+    .note { font-size: var(--t-xs); color: var(--ink-2); line-height: 1.6; background: var(--sunk); border-radius: var(--r-md); padding: var(--s-2) var(--s-3); }
+    .note ul { margin: var(--s-1) 0 0; padding-left: var(--s-4); }
+
+    /* ── Small screens ────────────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      .app { padding-top: var(--s-4); }
+      .section > summary, .section-body { padding-left: var(--s-3); padding-right: var(--s-3); }
+      .section-meta { display: none; }
+      .modal-overlay { padding: 0; }
+      .modal { width: 100%; min-height: 100%; border-radius: 0; border: 0; }
+      .actions .btn { flex: 1 1 auto; }
     }
-    .modal-close {
-      position: absolute;
-      top: 14px;
-      right: 16px;
-      background: none;
-      border: none;
-      color: #94a3b8;
-      font-size: 1.3rem;
-      cursor: pointer;
-      line-height: 1;
-    }
-    .modal-close:hover { color: #e2e8f0; }
-    .token-row {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 10px;
-    }
-    .token-row input {
-      flex: 1;
-      background: #0f1117;
-      border: 1px solid #2d3748;
-      border-radius: 8px;
-      color: #e2e8f0;
-      font-size: 0.9rem;
-      padding: 10px 12px;
-      font-family: monospace;
-    }
-    .token-row input:focus { outline: none; border-color: #4f8ef7; }
-    .token-status {
-      font-size: 0.82rem;
-      margin-bottom: 16px;
-    }
-    .token-status.set   { color: #34d399; }
-    .token-status.unset { color: #f87171; }
-    .settings-note {
-      font-size: 0.8rem;
-      color: #64748b;
-      line-height: 1.6;
-      margin-bottom: 20px;
-    }
-    .settings-note a { color: #4f8ef7; text-decoration: none; }
-    .settings-section { font-size: 0.95rem; font-weight: 600; margin: 4px 0 12px; color: #e2e8f0; }
-    .settings-sep { border: 0; border-top: 1px solid #2d3748; margin: 8px 0 18px; }
-    .settings-field { margin-bottom: 12px; }
-    .settings-field label { font-size: 0.82rem; color: #94a3b8; display: block; margin-bottom: 6px; }
-    .settings-field select, .settings-field input[type=text] {
-      width: 100%; background: #0f1117; border: 1px solid #2d3748; border-radius: 8px;
-      color: #e2e8f0; font-size: 0.9rem; padding: 9px 12px; }
-    .summary-panel { margin-bottom: 22px; display: none; }
-    .summary-text { background: #0f1117; border: 1px solid #2d3748; border-radius: 8px; padding: 14px 18px;
-      font-size: 0.95rem; line-height: 1.65; word-break: break-word; }
-    .summary-text h3 { font-size: 1rem; margin: 14px 0 6px; color: #e2e8f0; }
-    .summary-text h3:first-child { margin-top: 0; }
-    .summary-text ul, .summary-text ol { margin: 4px 0 8px 20px; padding: 0; }
-    .summary-text p { margin: 6px 0; }
-    .summary-text .ref { color: #94a3b8; font-size: 0.85em; white-space: nowrap; }
-    .summary-meta { font-size: 0.78rem; color: #64748b; margin-top: 6px; }
-    .result-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-    .result-actions .copy-btn.primary { background: #4f8ef7; color: #fff; }
-    .result-actions .copy-btn.primary:hover { background: #3b7be0; }
-    .settings-note a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chevron" viewBox="0 0 16 16"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 20 20"><path d="M10 12.75a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5Z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M16.2 12.2a1.4 1.4 0 0 0 .28 1.54l.05.05a1.7 1.7 0 1 1-2.4 2.4l-.05-.05a1.4 1.4 0 0 0-1.54-.28 1.4 1.4 0 0 0-.85 1.28v.14a1.7 1.7 0 1 1-3.4 0v-.07a1.4 1.4 0 0 0-.92-1.28 1.4 1.4 0 0 0-1.54.28l-.05.05a1.7 1.7 0 1 1-2.4-2.4l.05-.05a1.4 1.4 0 0 0 .28-1.54 1.4 1.4 0 0 0-1.28-.85H2.3a1.7 1.7 0 1 1 0-3.4h.07a1.4 1.4 0 0 0 1.28-.92 1.4 1.4 0 0 0-.28-1.54l-.05-.05a1.7 1.7 0 1 1 2.4-2.4l.05.05a1.4 1.4 0 0 0 1.54.28h.07a1.4 1.4 0 0 0 .85-1.28V2.3a1.7 1.7 0 1 1 3.4 0v.07a1.4 1.4 0 0 0 .85 1.28 1.4 1.4 0 0 0 1.54-.28l.05-.05a1.7 1.7 0 1 1 2.4 2.4l-.05.05a1.4 1.4 0 0 0-.28 1.54v.07a1.4 1.4 0 0 0 1.28.85h.14a1.7 1.7 0 1 1 0 3.4h-.07a1.4 1.4 0 0 0-1.28.85Z" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+  <symbol id="i-close" viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+</svg>
 
-<button id="settings-btn" title="Settings" onclick="openSettings()">&#9881;</button>
-
-<!-- Settings modal -->
+<!-- Settings sheet -->
 <div class="modal-overlay" id="settings-modal" onclick="if(event.target===this)closeSettings()">
-  <div class="modal">
-    <button class="modal-close" onclick="closeSettings()">&times;</button>
-    <h2>Settings</h2>
-
-    <div class="settings-section">AI summaries</div>
-    <div class="settings-field">
-      <label for="llm-provider">Summarise with</label>
-      <select id="llm-provider" onchange="saveLlmPrefs(); showProviderFields()">
-        <option value="claude">Claude (Anthropic API, cloud)</option>
-        <option value="ollama">Local model (Ollama, nothing leaves your computer)</option>
-      </select>
-    </div>
-    <div id="claude-fields">
-      <label style="font-size:0.82rem;color:#94a3b8;display:block;margin-bottom:8px;">Anthropic API key</label>
-      <div class="token-row">
-        <input type="password" id="anthropic-key-input" placeholder="sk-ant-..." autocomplete="off" />
-        <button class="btn" id="anthropic-show-btn" onclick="toggleVisibility('anthropic-key-input', 'anthropic-show-btn')" style="flex:0;padding:0 12px;font-size:0.8rem;">Show</button>
-        <button class="btn" onclick="saveAnthropicKey()" style="flex:0;padding:0 14px;">Save</button>
-      </div>
-      <div class="token-status unset" id="anthropic-status">Not set</div>
-      <div class="settings-field">
-        <label for="claude-model">Model</label>
-        <select id="claude-model" onchange="saveLlmPrefs()"></select>
-      </div>
-      <div class="settings-note">
-        Create a key at <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a>.
-        Only the transcript <b>text</b> is sent to Anthropic when you press Summarize. Audio never leaves your computer.
-        The key is stored on this computer only.
-      </div>
-    </div>
-    <div id="ollama-fields" style="display:none">
-      <div class="settings-field">
-        <label for="ollama-model">Local model</label>
-        <input type="text" id="ollama-model" placeholder="qwen3:8b" onchange="saveLlmPrefs()" />
-      </div>
-      <div class="token-status unset" id="ollama-status">Checking Ollama…</div>
-      <div class="settings-note">
-        Install <a href="https://ollama.com/download" target="_blank">Ollama</a>, then download a model once in a terminal,
-        e.g. <code>ollama pull qwen3:8b</code>. Local models are private but slower and less accurate than Claude.
-      </div>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="modal-head">
+      <h2 id="settings-title">Settings</h2>
+      <button class="btn btn-ghost icon-btn" onclick="closeSettings()" aria-label="Close settings"><svg><use href="#i-close"/></svg></button>
     </div>
 
-    <hr class="settings-sep">
-    <div class="settings-section">Speaker separation</div>
+    <details class="sub" id="set-ai" data-persist open>
+      <summary><svg class="chevron"><use href="#i-chevron"/></svg><span class="sub-title">AI summaries</span></summary>
+      <div class="sub-body">
+        <div class="field">
+          <label class="label" for="llm-provider">Summarise with</label>
+          <select class="select" id="llm-provider" onchange="saveLlmPrefs(); showProviderFields()">
+            <option value="claude">Claude (Anthropic API, cloud)</option>
+            <option value="ollama">Local model (Ollama, nothing leaves your computer)</option>
+          </select>
+        </div>
+        <div id="claude-fields" class="stack">
+          <div class="field">
+            <label class="label" for="anthropic-key-input">Anthropic API key</label>
+            <div class="input-row">
+              <input class="input" type="password" id="anthropic-key-input" placeholder="sk-ant-..." autocomplete="off" />
+              <button class="btn" id="anthropic-show-btn" onclick="toggleVisibility('anthropic-key-input', 'anthropic-show-btn')">Show</button>
+              <button class="btn btn-primary" onclick="saveAnthropicKey()">Save</button>
+            </div>
+            <div class="token-status unset" id="anthropic-status">Not set</div>
+          </div>
+          <div class="field">
+            <label class="label" for="claude-model">Model</label>
+            <select class="select" id="claude-model" onchange="saveLlmPrefs()"></select>
+          </div>
+          <p class="note">
+            Create a key at <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a>.
+            Only the transcript <b>text</b> is sent to Anthropic when you press Summarize; audio never leaves your computer.
+            The key is stored on this computer only.
+          </p>
+        </div>
+        <div id="ollama-fields" class="stack" style="display:none">
+          <div class="field">
+            <label class="label" for="ollama-model">Local model</label>
+            <input class="input" type="text" id="ollama-model" placeholder="qwen3:8b" onchange="saveLlmPrefs()" />
+            <div class="token-status unset" id="ollama-status">Checking Ollama…</div>
+          </div>
+          <p class="note">
+            Install <a href="https://ollama.com/download" target="_blank">Ollama</a>, then download a model once in a terminal,
+            e.g. <code>ollama pull qwen3:8b</code>. Local models are private but slower and less accurate than Claude.
+          </p>
+        </div>
+      </div>
+    </details>
 
-    <label style="font-size:0.82rem;color:#94a3b8;display:block;margin-bottom:8px;">HuggingFace Token</label>
-    <div class="token-row">
-      <input type="password" id="hf-token-input" placeholder="hf_..." autocomplete="off" />
-      <button class="btn" id="token-show-btn" onclick="toggleTokenVisibility()" style="flex:0;padding:0 12px;font-size:0.8rem;">Show</button>
-      <button class="btn" onclick="saveSettings()" style="flex:0;padding:0 14px;">Save</button>
-    </div>
-    <div class="token-status unset" id="token-status">Not set — diarization and longform disabled</div>
-
-    <div class="settings-note">
-      Required for speaker diarization and transcription of files over ~25s.<br>
-      Get a free token at <a href="https://huggingface.co/settings/tokens" target="_blank">huggingface.co/settings/tokens</a> (Read access).<br><br>
-      Then accept terms for these models (click each link, log in, click Agree):<br>
-      &bull; <a href="https://huggingface.co/pyannote/segmentation-3.0" target="_blank">pyannote/segmentation-3.0</a><br>
-      &bull; <a href="https://huggingface.co/pyannote/speaker-diarization-3.1" target="_blank">pyannote/speaker-diarization-3.1</a><br>
-      &bull; <a href="https://huggingface.co/pyannote/speaker-diarization-community-1" target="_blank">pyannote/speaker-diarization-community-1</a>
-    </div>
+    <details class="sub" id="set-hf" data-persist open>
+      <summary><svg class="chevron"><use href="#i-chevron"/></svg><span class="sub-title">Speaker separation</span></summary>
+      <div class="sub-body">
+        <div class="field">
+          <label class="label" for="hf-token-input">Hugging Face token</label>
+          <div class="input-row">
+            <input class="input" type="password" id="hf-token-input" placeholder="hf_..." autocomplete="off" />
+            <button class="btn" id="token-show-btn" onclick="toggleTokenVisibility()">Show</button>
+            <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+          </div>
+          <div class="token-status unset" id="token-status">Not set: speaker separation and long files disabled</div>
+        </div>
+        <div class="note">
+          Needed for speaker separation and for audio longer than ~25 s. Create a free
+          <a href="https://huggingface.co/settings/tokens" target="_blank">Read token</a>, then accept the terms of:
+          <ul>
+            <li><a href="https://huggingface.co/pyannote/segmentation-3.0" target="_blank">pyannote/segmentation-3.0</a></li>
+            <li><a href="https://huggingface.co/pyannote/speaker-diarization-3.1" target="_blank">pyannote/speaker-diarization-3.1</a></li>
+            <li><a href="https://huggingface.co/pyannote/speaker-diarization-community-1" target="_blank">pyannote/speaker-diarization-community-1</a></li>
+          </ul>
+        </div>
+      </div>
+    </details>
   </div>
 </div>
 
-<h1>Requirements Workbench</h1>
-<p class="subtitle">Stage 1 of the pipeline: record and transcribe calls locally with GigaAM — audio never leaves your machine</p>
-
-<!-- Transcribe card -->
-<div class="card">
-  <div class="card-title">Transcribe a file</div>
-
-  <div class="row">
-    <div class="field">
-      <label for="model-select">Model</label>
-      <select id="model-select"></select>
+<main class="app">
+  <header class="app-header">
+    <div class="grow">
+      <h1 class="app-title">Requirements Workbench</h1>
+      <p class="app-sub">Record or import a call, transcribe it locally with GigaAM, summarise it. Audio never leaves your computer.</p>
     </div>
-    <div class="field" style="flex:0;min-width:140px;">
-      <label>Device</label>
-      <div id="device-toggle" style="display:flex;border:1px solid #2d3748;border-radius:8px;overflow:hidden;height:41px;">
-        <button id="btn-cpu" onclick="setDevice('cpu')" style="flex:1;border-radius:0;border:none;font-size:0.85rem;padding:0 12px;background:#4f8ef7;color:#fff;">CPU</button>
-        <button id="btn-gpu" onclick="setDevice('cuda')" style="flex:1;border-radius:0;border:none;font-size:0.85rem;padding:0 12px;background:#0f1117;color:#94a3b8;" disabled title="GPU not available">GPU</button>
+    <button id="settings-btn" class="btn btn-ghost icon-btn" title="Settings" aria-label="Settings" onclick="openSettings()"><svg><use href="#i-gear"/></svg></button>
+  </header>
+
+  <!-- 1. Source -->
+  <details class="section" id="sec-source" data-persist open>
+    <summary>
+      <svg class="chevron"><use href="#i-chevron"/></svg>
+      <span class="section-title">Source</span>
+    </summary>
+    <div class="section-body">
+      <div class="grid-2">
+        <div class="panel">
+          <h2 class="panel-title">Upload</h2>
+          <p class="panel-desc">Audio or video to transcribe, or a transcript you already have.</p>
+          <div class="drop-zone" id="drop-zone">
+            <input type="file" id="file-input" accept="audio/*,video/*,.vtt,.srt,.txt,.docx,.pdf,.json,.md,text/plain,text/vtt,text/markdown,application/pdf,application/json,application/x-subrip,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+            <div class="drop-title">Drop a file here or <span>browse</span></div>
+            <div class="drop-formats">Audio: WAV, MP3, M4A, WebM, MP4… · Transcripts: Teams/Zoom .vtt, .srt, .docx, .pdf, .txt</div>
+            <div class="file-name" id="file-name"></div>
+          </div>
+          <div class="actions" style="margin-top:var(--s-3)">
+            <button class="btn btn-primary btn-block" id="transcribe-btn" disabled>Transcribe</button>
+          </div>
+          <div class="status" id="status" style="margin-top:var(--s-3)"></div>
+        </div>
+
+        <div class="panel">
+          <h2 class="panel-title">Record a call</h2>
+          <p class="panel-desc" id="rec-hint">Captures system audio (Teams, Zoom…) and your microphone. When prompted, share any screen and tick <b>Share system audio</b>.</p>
+          <div class="stack">
+            <div class="field">
+              <label class="label" for="mic-select">Microphone</label>
+              <select class="select" id="mic-select"><option value="">Default microphone</option></select>
+            </div>
+            <div class="actions">
+              <button class="btn btn-primary" id="rec-start-btn">Start recording</button>
+              <button class="btn btn-danger" id="rec-stop-btn" disabled>Stop</button>
+              <span class="rec-indicator" id="rec-indicator"><span class="rec-dot"></span>Recording <span class="mono" id="rec-timer">00:00</span></span>
+            </div>
+            <div class="rec-ready" id="rec-ready">
+              <audio id="rec-playback" controls></audio>
+              <div class="actions">
+                <button class="btn btn-primary" id="rec-transcribe-btn">Transcribe recording</button>
+                <button class="btn" id="rec-download-btn">Download</button>
+              </div>
+            </div>
+            <div class="status" id="rec-status"></div>
+            <button id="rec-open-browser" class="btn btn-sm hidden" onclick="openInBrowser()">Open in browser (mic + system audio)</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="progress-wrap" id="progress-wrap">
+        <div class="progress-bar-bg"><div class="progress-bar-fill" id="progress-bar"></div></div>
+        <div class="progress-msg"><span class="spinner"></span><span id="progress-msg-text"></span><span class="elapsed" id="progress-elapsed"></span></div>
       </div>
     </div>
-  </div>
+  </details>
 
-  <div class="toggles">
-    <div class="toggle-row">
-      <label class="toggle">
-        <input type="checkbox" id="diarize-toggle" />
-        <div class="toggle-track"></div>
-        <div class="toggle-thumb"></div>
-      </label>
-      <span style="font-size:0.9rem;">Speaker diarization <span style="color:#94a3b8;font-size:0.8rem;">(who said what)</span></span>
-    </div>
-
-    <div class="toggle-row" id="timestamps-row">
-      <label class="toggle">
-        <input type="checkbox" id="timestamps-toggle" />
-        <div class="toggle-track"></div>
-        <div class="toggle-thumb"></div>
-      </label>
-      <span style="font-size:0.9rem;">Word timestamps</span>
-    </div>
-  </div>
-
-  <div class="drop-zone" id="drop-zone">
-    <input type="file" id="file-input" accept="audio/*,video/*,.vtt,.srt,.txt,.docx,.pdf,.json,.md,text/plain,text/vtt,text/markdown,application/pdf,application/json,application/x-subrip,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
-    <div class="drop-icon">🎙</div>
-    <div class="drop-text">Drop an audio file or a transcript here, or <span>browse</span></div>
-    <div class="drop-text" style="margin-top:4px;font-size:0.8rem;">Audio: WAV, MP3, FLAC, OGG, M4A, WebM… · Transcripts: Teams/Zoom .vtt, .srt, .docx, .pdf, .txt</div>
-    <div class="file-name" id="file-name"></div>
-  </div>
-
-  <button id="transcribe-btn" disabled>Transcribe</button>
-
-  <div class="progress-wrap" id="progress-wrap">
-    <div class="progress-bar-bg">
-      <div class="progress-bar-fill" id="progress-bar"></div>
-    </div>
-    <div class="progress-msg">
-      <span class="spinner"></span>
-      <span id="progress-msg-text"></span>
-      <span id="progress-elapsed" style="margin-left:auto;color:#64748b;font-size:0.78rem;"></span>
-    </div>
-  </div>
-  <div class="status" id="status"></div>
-
-  <div class="result-box" id="result-box">
-    <div class="result-actions" style="margin-bottom:14px">
-      <button class="copy-btn primary" id="summarize-btn">Summarize</button>
-      <button class="copy-btn" id="copy-btn">Copy transcript</button>
-    </div>
-
-    <div class="summary-panel" id="summary-panel">
-      <div class="result-label">Summary</div>
-      <div class="summary-text" id="summary-text"></div>
-      <div class="summary-meta" id="summary-meta"></div>
-      <div class="result-actions">
-        <button class="copy-btn" id="copy-summary-btn">Copy summary</button>
+  <!-- 2. Options (shared by upload and recording) -->
+  <details class="section" id="sec-options" data-persist>
+    <summary>
+      <svg class="chevron"><use href="#i-chevron"/></svg>
+      <span class="section-title">Transcription options</span>
+      <span class="section-meta" id="options-summary">v3_e2e_rnnt · CPU</span>
+    </summary>
+    <div class="section-body">
+      <div class="row">
+        <div class="field grow">
+          <label class="label" for="model-select">Speech model</label>
+          <select class="select" id="model-select"></select>
+        </div>
+        <div class="field">
+          <span class="label">Device</span>
+          <div class="seg" id="device-toggle" role="group" aria-label="Device">
+            <button id="btn-cpu" onclick="setDevice('cpu')" aria-pressed="true">CPU</button>
+            <button id="btn-gpu" onclick="setDevice('cuda')" aria-pressed="false" disabled title="GPU not available">GPU</button>
+          </div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:var(--s-3)">
+        <label class="check"><input type="checkbox" class="switch" id="diarize-toggle" />Speaker separation <span class="hint">who said what</span></label>
+        <label class="check" id="timestamps-row"><input type="checkbox" class="switch" id="timestamps-toggle" />Word timestamps</label>
       </div>
     </div>
+  </details>
 
-    <div class="result-label">Transcript</div>
-    <div class="result-text" id="result-text"></div>
+  <!-- 3. Result -->
+  <details class="section" id="result-box" style="display:none" open>
+    <summary>
+      <svg class="chevron"><use href="#i-chevron"/></svg>
+      <span class="section-title">Result</span>
+      <span class="section-meta" id="result-meta"></span>
+    </summary>
+    <div class="section-body">
+      <div class="actions" style="margin-bottom:var(--s-3)">
+        <button class="btn btn-primary" id="summarize-btn">Summarize</button>
+        <button class="btn" id="copy-btn">Copy transcript</button>
+      </div>
 
+      <details class="sub" id="summary-panel" style="display:none" open>
+        <summary><svg class="chevron"><use href="#i-chevron"/></svg><span class="sub-title">Summary</span></summary>
+        <div class="sub-body">
+          <div class="summary-text" id="summary-text"></div>
+          <div class="summary-meta" id="summary-meta"></div>
+          <div class="actions" style="margin-top:var(--s-3)">
+            <button class="btn btn-sm" id="copy-summary-btn">Copy summary</button>
+          </div>
+        </div>
+      </details>
 
-    <div class="words-table" id="words-table">
-      <div class="result-label" style="margin-top:20px;">Word timestamps</div>
-      <table>
-        <thead>
-          <tr><th>#</th><th>Word</th><th>Start</th><th>End</th></tr>
-        </thead>
-        <tbody id="words-body"></tbody>
-      </table>
+      <details class="sub" id="sub-transcript" data-persist open>
+        <summary><svg class="chevron"><use href="#i-chevron"/></svg><span class="sub-title">Transcript</span></summary>
+        <div class="sub-body"><div class="result-text" id="result-text"></div></div>
+      </details>
+
+      <details class="sub" id="segments-table" style="display:none">
+        <summary><svg class="chevron"><use href="#i-chevron"/></svg><span class="sub-title">Segments</span></summary>
+        <div class="sub-body">
+          <div class="table-wrap"><table><thead id="segments-thead"></thead><tbody id="segments-body"></tbody></table></div>
+        </div>
+      </details>
+
+      <details class="sub" id="words-table" style="display:none">
+        <summary><svg class="chevron"><use href="#i-chevron"/></svg><span class="sub-title">Word timestamps</span></summary>
+        <div class="sub-body">
+          <div class="table-wrap"><table><thead><tr><th>#</th><th>Word</th><th>Start</th><th>End</th></tr></thead><tbody id="words-body"></tbody></table></div>
+        </div>
+      </details>
     </div>
-
-    <div class="segments-table" id="segments-table">
-      <div class="result-label" style="margin-top:20px;">Segments</div>
-      <table>
-        <thead id="segments-thead"></thead>
-        <tbody id="segments-body"></tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<!-- Record card -->
-<div class="card">
-  <div class="card-title">Record a call</div>
-  <p id="rec-hint" style="font-size:0.85rem;color:#94a3b8;margin-bottom:16px;">
-    Captures all system audio output (Teams, Discord, etc.) mixed with your microphone.<br>
-    When prompted, share any screen and check <strong style="color:#e2e8f0;">"Share system audio"</strong>.
-  </p>
-
-  <div class="rec-indicator" id="rec-indicator">
-    <div class="rec-dot"></div>
-    <span>Recording — <span id="rec-timer">00:00</span></span>
-  </div>
-
-  <div class="row" style="margin-bottom:16px;align-items:flex-end;">
-    <div class="field" style="flex:1;">
-      <label for="mic-select">Microphone</label>
-      <select id="mic-select"><option value="">Default microphone</option></select>
-    </div>
-  </div>
-
-  <div class="rec-controls">
-    <button id="rec-start-btn" class="btn-secondary">Start Recording</button>
-    <button id="rec-stop-btn" class="btn-secondary btn-danger" disabled>Stop</button>
-  </div>
-
-  <div class="rec-ready" id="rec-ready">
-    <audio id="rec-playback" controls></audio>
-    <div class="rec-actions">
-      <button class="btn-secondary" id="rec-download-btn">Download</button>
-      <button id="rec-transcribe-btn">Transcribe recording</button>
-    </div>
-  </div>
-
-  <div class="status" id="rec-status"></div>
-  <button id="rec-open-browser" class="btn-secondary hidden" style="margin-top:10px;font-size:0.82rem;" onclick="openInBrowser()">Open in browser (mic + system audio)</button>
-</div>
+  </details>
+</main>
 
 <script>
   // ── Mic device enumeration ───────────────────────────────────────────────
@@ -709,14 +484,16 @@
   async function populateMicDevices() {
     const select = document.getElementById("mic-select");
     const current = select.value;
-    select.innerHTML = "";
+    // Always offer the default; device names may be unavailable (no permission yet).
+    select.innerHTML = '<option value="">Default microphone</option>';
 
     if (inDesktopApp) {
       // Desktop app: get devices from Python backend (bypasses WebView2 permission issues)
       const res = await fetch("/audio-devices");
       const devices = await res.json();
       if (devices.error) return;
-      devices.forEach(d => {
+      // System audio is always recorded on its own channel, so it isn't a microphone choice.
+      devices.filter(d => d.index !== "loopback").forEach(d => {
         const opt = document.createElement("option");
         opt.value = d.index;
         opt.textContent = d.name;
@@ -726,7 +503,7 @@
     } else {
       // Browser mode: use Web Audio API
       const devices = await navigator.mediaDevices.enumerateDevices();
-      const mics = devices.filter(d => d.kind === "audioinput");
+      const mics = devices.filter(d => d.kind === "audioinput" && d.deviceId && d.deviceId !== "default");
       mics.forEach((d, i) => {
         const opt = document.createElement("option");
         opt.value = d.deviceId;
@@ -839,10 +616,10 @@
   function updateTokenStatus(info) {
     const el = document.getElementById("token-status");
     if (info.hf_token_set) {
-      el.textContent = "Token is set — diarization and longform enabled";
+      el.textContent = "Token is set: speaker separation and long files enabled";
       el.className = "token-status set";
     } else {
-      el.textContent = "Not set — diarization and longform disabled";
+      el.textContent = "Not set: speaker separation and long files disabled";
       el.className = "token-status unset";
     }
   }
@@ -887,6 +664,7 @@
       opt.textContent = m;
       modelSelect.appendChild(opt);
     });
+    updateOptionsSummary();
   });
 
   let selectedDevice = "cpu";
@@ -926,27 +704,28 @@
 
   function setDevice(d) {
     selectedDevice = d;
-    btnCpu.style.background = d === "cpu" ? "#4f8ef7" : "#0f1117";
-    btnCpu.style.color = d === "cpu" ? "#fff" : "#94a3b8";
-    btnGpu.style.background = d === gpuDevice ? "#4f8ef7" : "#0f1117";
-    btnGpu.style.color = d === gpuDevice ? "#fff" : "#94a3b8";
+    btnCpu.setAttribute("aria-pressed", String(d === "cpu"));
+    btnGpu.setAttribute("aria-pressed", String(d === gpuDevice));
+    updateOptionsSummary();
+  }
+
+  // One-line summary of the options in the collapsed "Transcription options" header.
+  function updateOptionsSummary() {
+    const parts = [modelSelect.value || "model", selectedDevice === "cpu" ? "CPU" : "GPU"];
+    if (diarizeToggle.checked) parts.push("speakers");
+    else if (timestampsToggle.checked) parts.push("word timestamps");
+    document.getElementById("options-summary").textContent = parts.join(" · ");
   }
 
   // ── Speaker colors ───────────────────────────────────────────────────────
-  const SPEAKER_COLORS = [
-    { bg: "rgba(79,142,247,0.15)",  text: "#60a5fa" },
-    { bg: "rgba(52,211,153,0.15)",  text: "#34d399" },
-    { bg: "rgba(251,146,60,0.15)",  text: "#fb923c" },
-    { bg: "rgba(192,132,252,0.15)", text: "#c084fc" },
-    { bg: "rgba(251,113,133,0.15)", text: "#fb7185" },
-    { bg: "rgba(250,204,21,0.15)",  text: "#facc15" },
-  ];
+  // Speakers get a stable colour class (spk-0 … spk-4, defined with the theme tokens).
+  const SPEAKER_CLASSES = 5;
   const speakerColorMap = {};
   let speakerColorIdx = 0;
 
   function getSpeakerColor(speaker) {
     if (!(speaker in speakerColorMap)) {
-      speakerColorMap[speaker] = SPEAKER_COLORS[speakerColorIdx % SPEAKER_COLORS.length];
+      speakerColorMap[speaker] = `spk-${speakerColorIdx % SPEAKER_CLASSES}`;
       speakerColorIdx++;
     }
     return speakerColorMap[speaker];
@@ -975,7 +754,8 @@
   const segmentsBody = document.getElementById("segments-body");
 
   diarizeToggle.addEventListener("change", () => {
-    timestampsRow.style.display = diarizeToggle.checked ? "none" : "flex";
+    timestampsRow.style.display = diarizeToggle.checked ? "none" : "";
+    updateOptionsSummary();
   });
 
   let selectedFile = null;
@@ -1083,10 +863,15 @@
     const data = job.result;
     lastResult = { text: data.text, title: file.name };
 
-    statusTarget.textContent = data.imported
-      ? `Imported ${data.imported.format.toUpperCase()} transcript: ${data.segments?.length || 0} segments` +
-        (data.diarized ? `, ${new Set(data.segments.map(s => s.speaker).filter(Boolean)).size} speakers` : "")
-      : "Done.";
+    const speakerCount = data.diarized ? new Set(data.segments.map(s => s.speaker).filter(Boolean)).size : 0;
+    const resultSummary = [
+      data.imported ? `Imported ${data.imported.format.toUpperCase()}` : "Transcribed",
+      data.segments?.length ? `${data.segments.length} segments` : null,
+      speakerCount ? `${speakerCount} speakers` : null,
+    ].filter(Boolean).join(" · ");
+    statusTarget.textContent = "";
+    document.getElementById("result-meta").textContent = `${file.name} · ${resultSummary}`;
+    resultBox.open = true;
     resultText.textContent = data.text;
     resultBox.style.display = "block";
     wordsTable.style.display = "none";
@@ -1098,7 +883,7 @@
       wordsBody.innerHTML = "";
       data.words.forEach((w, i) => {
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${i+1}</td><td>${esc(w.text)}</td><td>${esc(fmtTime(w.start))}</td><td>${esc(fmtTime(w.end))}</td>`;
+        tr.innerHTML = `<td class="num">${i+1}</td><td>${esc(w.text)}</td><td class="time">${esc(fmtTime(w.start))}</td><td class="time">${esc(fmtTime(w.end))}</td>`;
         wordsBody.appendChild(tr);
       });
       wordsTable.style.display = "block";
@@ -1113,14 +898,14 @@
       data.segments.forEach((seg, i) => {
         const tr = document.createElement("tr");
         if (hasSpeakers) {
-          const c = getSpeakerColor(seg.speaker);
-          tr.innerHTML = `<td>${i+1}</td>
-            <td><span class="speaker-badge" style="background:${c.bg};color:${c.text}">${esc(seg.speaker || "—")}</span></td>
-            <td style="white-space:nowrap">${esc(fmtTime(seg.start))}</td>
-            <td style="white-space:nowrap">${esc(fmtTime(seg.end))}</td>
+          const cls = getSpeakerColor(seg.speaker);
+          tr.innerHTML = `<td class="num">${i+1}</td>
+            <td><span class="speaker-badge ${cls}">${esc(seg.speaker || "—")}</span></td>
+            <td class="time">${esc(fmtTime(seg.start))}</td>
+            <td class="time">${esc(fmtTime(seg.end))}</td>
             <td>${esc(seg.text)}</td>`;
         } else {
-          tr.innerHTML = `<td>${i+1}</td><td>${esc(fmtTime(seg.start))}</td><td>${esc(fmtTime(seg.end))}</td><td>${esc(seg.text)}</td>`;
+          tr.innerHTML = `<td class="num">${i+1}</td><td class="time">${esc(fmtTime(seg.start))}</td><td class="time">${esc(fmtTime(seg.end))}</td><td>${esc(seg.text)}</td>`;
         }
         segmentsBody.appendChild(tr);
       });
@@ -1194,6 +979,7 @@
     if (!lastResult || !lastResult.text) return;
     summarizeBtn.disabled = true;
     summaryPanel.style.display = "block";
+    summaryPanel.open = true;
     summaryPanel.scrollIntoView({ behavior: "smooth", block: "start" });
     summaryText.innerHTML = "";
     summaryMeta.className = "summary-meta";
@@ -1477,6 +1263,20 @@
     }
     recTranscribeBtn.disabled = false;
   });
+
+  // Remember which sections the user collapsed (per viewer; storage may be unavailable).
+  document.querySelectorAll("details[data-persist]").forEach(el => {
+    const key = "wb.open." + el.id;
+    try {
+      const saved = localStorage.getItem(key);
+      if (saved !== null) el.open = saved === "1";
+    } catch (_) { /* private mode: keep defaults */ }
+    el.addEventListener("toggle", () => {
+      try { localStorage.setItem(key, el.open ? "1" : "0"); } catch (_) {}
+    });
+  });
+  modelSelect.addEventListener("change", updateOptionsSummary);
+  timestampsToggle.addEventListener("change", updateOptionsSummary);
 </script>
 </body>
 </html>
