@@ -18,10 +18,11 @@ from torch.utils.data import DataLoader
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify, send_file, send_from_directory
 
+from core.ffmpeg import ensure_ffmpeg_on_path
 from core.jobs import JobStore, SerialQueue
 from core.paths import recordings_dir
 from core.recorder import SAMPLE_RATE as REC_SAMPLE_RATE, DualChannelRecorder, mix_wavs
-from core.security import BIND_HOST, install_local_only_guard
+from core.security import install_local_only_guard
 
 load_dotenv()
 
@@ -29,7 +30,6 @@ hf_token = os.getenv("HF_TOKEN")
 if hf_token:
     os.environ["HF_TOKEN"] = hf_token
 
-PORT = 5000
 OLLAMA_URL = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
 
 app = Flask(__name__, static_folder="static")
@@ -39,12 +39,10 @@ CUDA_AVAILABLE = torch.cuda.is_available()
 GPU_NAME = torch.cuda.get_device_name(0) if CUDA_AVAILABLE else None
 MPS_AVAILABLE = torch.backends.mps.is_available() if hasattr(torch.backends, "mps") else False
 
-# Check ffmpeg availability once at startup
-try:
-    subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
-    FFMPEG_AVAILABLE = True
-except (FileNotFoundError, subprocess.CalledProcessError):
-    FFMPEG_AVAILABLE = False
+# System ffmpeg if present, else the one setup installs (imageio-ffmpeg), exposed on
+# PATH because GigaAM's load_audio calls a bare "ffmpeg"
+FFMPEG_EXE = ensure_ffmpeg_on_path()
+FFMPEG_AVAILABLE = FFMPEG_EXE is not None
 
 _models = {}
 _model_lock = threading.Lock()
@@ -78,13 +76,10 @@ NEEDS_CONVERSION = {".webm", ".ogg", ".opus", ".mp4", ".m4a", ".weba"}
 
 def convert_to_wav(input_path):
     if not FFMPEG_AVAILABLE:
-        raise RuntimeError(
-            "ffmpeg is not installed or not on PATH. "
-            "Install it from https://ffmpeg.org/download.html and add it to your PATH."
-        )
+        raise RuntimeError("ffmpeg is missing. Restart the app to let setup reinstall it.")
     wav_path = input_path + ".wav"
     subprocess.run(
-        ["ffmpeg", "-y", "-i", input_path, "-ar", "16000", "-ac", "1", wav_path],
+        [FFMPEG_EXE, "-y", "-i", input_path, "-ar", "16000", "-ac", "1", wav_path],
         check=True,
         capture_output=True,
     )
@@ -518,74 +513,7 @@ def job_status(job_id):
     return jsonify(job)
 
 
-def _run_flask_background():
-    import logging
-    logging.getLogger("werkzeug").setLevel(logging.ERROR)
-    app.run(host=BIND_HOST, port=PORT, debug=False, use_reloader=False)
-
-
-def _wait_for_server(timeout=15):
-    import time
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            urllib.request.urlopen(f"http://{BIND_HOST}:{PORT}/", timeout=1)
-            return True
-        except Exception:
-            time.sleep(0.1)
-    return False
-
-
 if __name__ == "__main__":
-    try:
-        import webview
-        _webview_available = True
-    except ImportError:
-        _webview_available = False
-
-    browser_mode = "--browser" in sys.argv or not _webview_available
-
-    print()
-    print("  GigaAM Transcriber")
-    print("  " + "-" * 40)
-    print(f"  ffmpeg   : {'found' if FFMPEG_AVAILABLE else 'NOT FOUND — install from ffmpeg.org and add to PATH'}")
-    if CUDA_AVAILABLE:
-        gpu_str = GPU_NAME
-    elif MPS_AVAILABLE:
-        gpu_str = "Apple Silicon (MPS)"
-    else:
-        gpu_str = "not available (CPU only)"
-    print(f"  GPU      : {gpu_str}")
-    print(f"  HF token : {'set' if hf_token else 'not set — diarization and longform disabled'}")
-    print("  " + "-" * 40)
-
-    if browser_mode:
-        print(f"  Open http://localhost:{PORT} in Chrome or Edge")
-        print()
-        # Loopback only: never expose transcripts or /settings to the LAN (spec NFR-SEC-04).
-        app.run(host=BIND_HOST, port=PORT, debug=False)
-    else:
-        print("  Starting desktop window...")
-        print()
-        t = threading.Thread(target=_run_flask_background, daemon=True)
-        t.start()
-        _wait_for_server()
-        IS_DESKTOP = True
-
-        import webbrowser
-
-        class _Api:
-            def open_in_browser(self):
-                webbrowser.open(f"http://{BIND_HOST}:{PORT}")
-
-        storage = os.path.join(os.path.expanduser("~"), ".gigaam_transcriber")
-        os.makedirs(storage, exist_ok=True)
-        webview.create_window(
-            "GigaAM Transcriber",
-            f"http://{BIND_HOST}:{PORT}",
-            width=1200,
-            height=820,
-            min_size=(800, 600),
-            js_api=_Api(),
-        )
-        webview.start(private_mode=False, storage_path=storage)
+    # Dev entry point; the installed app starts through launcher.py.
+    import launcher
+    sys.exit(launcher.main(app_module=sys.modules[__name__]))
