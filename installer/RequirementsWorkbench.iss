@@ -1,12 +1,16 @@
-; GigaAM Transcriber - Inno Setup Script
+; Requirements Workbench - Inno Setup Script
 ; Requires Inno Setup 6.1+: https://jrsoftware.org/isinfo.php
 ;
 ; Built by packaging/build.py --target windows-x64, which stages a standalone
 ; Python with the base layer plus the app into StageDir. Nothing needs to be
 ; preinstalled on the user's PC; the app's Setup screen installs PyTorch,
 ; GigaAM, ffmpeg and the speech model on first launch (spec FR-PLAT-04/06).
+;
+; The app was called "GigaAM Transcriber" up to 1.0. AppId keeps that old
+; identity (1.0 had no explicit AppId, so Inno used its name), so installing
+; over 1.0 upgrades it in place instead of adding a second copy.
 
-#define AppName "GigaAM Transcriber"
+#define AppName "Requirements Workbench"
 #ifndef AppVersion
   #define AppVersion "0.0.0-dev"
 #endif
@@ -20,7 +24,7 @@
 #define WebView2Guid "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 
 [Setup]
-AppId={{6C7B8E2A-4F1D-4B8E-9A55-2F7E5D1C3B90}
+AppId=GigaAM Transcriber
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
@@ -29,7 +33,7 @@ AppSupportURL={#AppURL}
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=Output
-OutputBaseFilename=GigaAM-Transcriber-{#AppVersion}-Setup
+OutputBaseFilename=RequirementsWorkbench-{#AppVersion}-Setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 ; No admin rights needed: per-user install
@@ -54,6 +58,12 @@ Source: "{#StageDir}\app\*";    DestDir: "{app}\app";    Flags: ignoreversion re
 Type: files; Name: "{app}\setup.bat"
 Type: files; Name: "{app}\launcher.bat"
 Type: files; Name: "{app}\launcher-browser.bat"
+Type: files; Name: "{app}\app.py"
+Type: files; Name: "{app}\requirements.txt"
+Type: filesandordirs; Name: "{app}\static"
+; 1.0 shortcuts under the old name
+Type: filesandordirs; Name: "{userprograms}\GigaAM Transcriber"
+Type: files; Name: "{userdesktop}\GigaAM Transcriber.lnk"
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\app\boot.py"""; WorkingDir: "{app}\app"; IconFilename: "{app}\python\pythonw.exe"

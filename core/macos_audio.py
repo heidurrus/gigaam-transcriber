@@ -17,7 +17,7 @@ import uuid
 from core.recorder import SAMPLE_RATE
 from core.resample import StreamResampler
 
-DEVICE_NAME = "GigaAM Transcriber System Audio"
+DEVICE_NAME = "Requirements Workbench System Audio"
 MIN_MACOS = (14, 2)
 BLOCK = 1024
 
@@ -90,7 +90,7 @@ class SystemAudioTap:
 
         aggregate = {
             _key(ca.kAudioAggregateDeviceNameKey): DEVICE_NAME,
-            _key(ca.kAudioAggregateDeviceUIDKey): "gigaam-sysaudio-" + uuid.uuid4().hex[:12],
+            _key(ca.kAudioAggregateDeviceUIDKey): "workbench-sysaudio-" + uuid.uuid4().hex[:12],
             _key(ca.kAudioAggregateDeviceMainSubDeviceKey): out_uid,
             _key(ca.kAudioAggregateDeviceIsPrivateKey): True,
             _key(ca.kAudioAggregateDeviceIsStackedKey): False,

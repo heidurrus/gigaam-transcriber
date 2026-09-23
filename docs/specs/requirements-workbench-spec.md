@@ -953,13 +953,13 @@ Development starts from `heidurrus/gigaam-transcriber` (commit `74d3289`). `[CON
 | — | **New** | Persistence layer, team-ready (NFR-DATA-03, NFR-MAINT-02); projects + Local-only mode (FR-PRJ-03/05); audit log (NFR-AUD-02); LLM gateway for Anthropic + Ollama with per-stage config (FR-SET-02); skills loader (FR-SET-04); atom extraction/dedup/conflicts (FR-ATM-*); FRD builder + versioning + DOCX built-in/GOST (FR-DOC-*); decomposition + INVEST (FR-DEC-*); **MCP client for the Atlassian Remote MCP** + OAuth (FR-JIRA-*, FR-SET-05); text-document importers (FR-SRC-03) |
 
 ### 12.2 Proposed delivery increments
-| # | Increment | Content | Value |
-|---|---|---|---|
-| 0 | Harden the baseline + platform foundation | Loopback-only binding, stream recording to disk, show recorder errors, clean up jobs, UI env checks; **embedded runtime + first-run Setup screen + startup dependency check on Windows and macOS; macOS `.app` packaging; spike for macOS system-audio capture** | Installs and runs as a desktop app on both OSes with zero manual setup |
-| 1 | Source library | Projects, persistence, sources list (S01), stored transcript viewer with playback (S02), baseline features kept (gap #19), RU/EN i18n | The transcriber becomes a workspace |
-| 2 | Atoms | LLM gateway, `extract-requirements` skill, extraction with chunk progress, review UI (S03), dedup, conflicts, open questions | First BA value |
-| 3 | FRD | Builder, versions, provenance, stale sections, quality check, DOCX, custom skills (S04, S07 skills) | A document to hand over |
-| 4 | Backlog & Jira | Decomposition, INVEST, Atlassian Remote MCP connection (OAuth), dry-run preview, idempotent deterministic push (S05, S06) | End-to-end pipeline |
+| # | Increment | Content | Value | Status |
+|---|---|---|---|---|
+| 0 | Harden the baseline + platform foundation | Loopback-only binding, stream recording to disk, show recorder errors, clean up jobs, UI env checks; **embedded runtime + first-run Setup screen + startup dependency check on Windows and macOS; macOS `.app` packaging; spike for macOS system-audio capture** | Installs and runs as a desktop app on both OSes with zero manual setup | ✅ Implemented in 1.1.0 (2026-09-23), in user testing; app renamed to Requirements Workbench |
+| 1 | Source library | Projects, persistence, sources list (S01), stored transcript viewer with playback (S02), baseline features kept (gap #19), RU/EN i18n | The transcriber becomes a workspace | ⏳ Next |
+| 2 | Atoms | LLM gateway, `extract-requirements` skill, extraction with chunk progress, review UI (S03), dedup, conflicts, open questions | First BA value | Planned |
+| 3 | FRD | Builder, versions, provenance, stale sections, quality check, DOCX, custom skills (S04, S07 skills) | A document to hand over | Planned |
+| 4 | Backlog & Jira | Decomposition, INVEST, Atlassian Remote MCP connection (OAuth), dry-run preview, idempotent deterministic push (S05, S06) | End-to-end pipeline | Planned |
 
 ### 12.3 Baseline regression checklist (must still pass after each increment)
 - Upload WAV/MP3/FLAC/OGG/M4A/WebM → transcript on CPU and on GPU (CUDA; MPS on Mac).
