@@ -7,6 +7,11 @@ First step from GigaAM Transcriber towards Requirements Workbench
 end-user features yet: this makes the existing transcriber safe, installable
 without prerequisites, and a native app on both Windows and macOS.
 
+### Renamed: GigaAM Transcriber → Requirements Workbench
+The app, installers and macOS bundle now carry the product's name. The Windows
+installer upgrades an existing GigaAM Transcriber 1.0 in place and removes its
+old shortcuts. GigaAM remains the speech-recognition engine.
+
 ### Install & platform
 - **No prerequisites.** Installers bundle Python 3.12; the app's **Setup screen**
   installs PyTorch (CUDA / Apple GPU / CPU, picked for the machine), GigaAM (pinned),

@@ -7,7 +7,7 @@ Steps: download the pinned standalone CPython (checksum-verified), install the
 base layer into it, copy the app, then
 - macOS: assemble the .app (native launcher stub, Info.plist), ad-hoc sign it
   (or sign with $MACOS_SIGN_IDENTITY), wrap it in a .dmg;
-- Windows: stage the files and compile installer/GigaAM-Transcriber.iss with
+- Windows: stage the files and compile installer/RequirementsWorkbench.iss with
   Inno Setup.
 
 Stdlib only; runs on the build machine's Python 3.9+.
@@ -30,11 +30,12 @@ DIST = os.path.join(ROOT, "dist")
 # Assemble outside the repo on macOS: synced folders (iCloud "Documents") keep
 # adding file-provider attributes that codesign refuses. Override with BUILD_DIR.
 BUILD = os.getenv("BUILD_DIR") or (
-    os.path.expanduser("~/Library/Caches/GigaAMTranscriberBuild") if sys.platform == "darwin"
+    os.path.expanduser("~/Library/Caches/RequirementsWorkbenchBuild") if sys.platform == "darwin"
     else os.path.join(ROOT, "build"))
 
-APP_NAME = "GigaAM Transcriber"
-BUNDLE_ID = "com.heidurrus.gigaam-transcriber"
+APP_NAME = "Requirements Workbench"
+BUNDLE_ID = "com.heidurrus.requirements-workbench"
+ARTIFACT = "RequirementsWorkbench"
 APP_FILES = ["app.py", "launcher.py", "boot.py", "requirements.txt", "core", "static"]
 
 
@@ -163,7 +164,8 @@ def build_macos(skip_dmg=False):
         plistlib.load(f)  # fail the build on a malformed plist
 
     run(["xattr", "-cr", app])  # codesign rejects Finder info / provenance attributes
-    identity = os.getenv("MACOS_SIGN_IDENTITY", "-")
+    # Unset CI secrets arrive as empty strings, so treat empty as "not configured".
+    identity = os.getenv("MACOS_SIGN_IDENTITY") or "-"
     log("Signing " + ("ad-hoc (local use)" if identity == "-" else f"with {identity}"))
     sign = ["codesign", "--force", "--deep", "--sign", identity, "--timestamp=none" if identity == "-" else "--timestamp"]
     if identity != "-":
@@ -180,7 +182,7 @@ def build_macos(skip_dmg=False):
     os.makedirs(stage)
     run(["ditto", app, os.path.join(stage, f"{APP_NAME}.app")])
     os.symlink("/Applications", os.path.join(stage, "Applications"))
-    dmg = os.path.join(DIST, f"GigaAM-Transcriber-{ver}-macos-arm64.dmg")
+    dmg = os.path.join(DIST, f"{ARTIFACT}-{ver}-macos-arm64.dmg")
     if os.path.exists(dmg):
         os.remove(dmg)
     run(["hdiutil", "create", "-volname", APP_NAME, "-srcfolder", stage, "-ov", "-format", "UDZO", dmg])
@@ -222,8 +224,8 @@ def build_windows(skip_installer=False):
     log("Compiling installer with Inno Setup")
     os.makedirs(DIST, exist_ok=True)
     run([iscc, f"/DStageDir={stage}", f"/DAppVersion={ver}", f"/O{DIST}",
-         os.path.join(ROOT, "installer", "GigaAM-Transcriber.iss")])
-    return os.path.join(DIST, f"GigaAM-Transcriber-{ver}-Setup.exe")
+         os.path.join(ROOT, "installer", "RequirementsWorkbench.iss")])
+    return os.path.join(DIST, f"{ARTIFACT}-{ver}-Setup.exe")
 
 
 def main():

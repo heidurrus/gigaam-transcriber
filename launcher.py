@@ -24,7 +24,7 @@ from core.setup_runner import SetupRunner
 from core.setup_server import create_setup_app
 
 PORT = 5000
-APP_TITLE = "GigaAM Transcriber"
+APP_TITLE = "Requirements Workbench"
 URL = f"http://{BIND_HOST}:{PORT}"
 
 

@@ -13,8 +13,8 @@ jobs:
   macos:
     runs-on: macos-14   # Apple Silicon
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Build .app and .dmg
@@ -25,7 +25,7 @@ jobs:
       - name: Self-test the bundle
         run: |
           MNT=$(hdiutil attach -nobrowse -readonly dist/*.dmg | tail -1 | cut -f3)
-          "$MNT/GigaAM Transcriber.app/Contents/MacOS/GigaAM Transcriber" --self-test
+          "$MNT/Requirements Workbench.app/Contents/MacOS/Requirements Workbench" --self-test
           hdiutil detach "$MNT"
       - uses: actions/upload-artifact@v4
         with:
@@ -35,8 +35,8 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Ensure Inno Setup
