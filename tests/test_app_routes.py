@@ -172,7 +172,7 @@ def test_unreadable_transcript_is_a_clear_400(client):
     res = client.post("/transcribe", data={"audio": (io.BytesIO(b"not a zip"), "notes.docx")},
                       content_type="multipart/form-data")
     assert res.status_code == 400
-    assert "Could not read this transcript" in res.get_json()["error"]
+    assert "Could not read this file" in res.get_json()["error"]
 
 
 def test_pdf_transcript_upload(client):

@@ -54,6 +54,31 @@ class StreamingWavWriter:
         self._file.close()
 
 
+def wav_duration(path):
+    with wave.open(path, "rb") as r:
+        return r.getnframes() / float(r.getframerate() or SAMPLE_RATE)
+
+
+def speech_bounds(path, window=0.02, rel_threshold=0.1):
+    """(start, end) seconds of the audible part of a short mono 16-bit WAV, or None if silent.
+
+    Used when speech recognition returns text without timestamps (short clips),
+    so the segment still starts where the speech does, not at 0.
+    """
+    with wave.open(path, "rb") as r:
+        rate = r.getframerate() or SAMPLE_RATE
+        audio = np.frombuffer(r.readframes(r.getnframes()), dtype="<i2").astype(np.float32)
+    n = max(1, int(rate * window))
+    if len(audio) < n:
+        return None
+    frames = audio[: len(audio) // n * n].reshape(-1, n)
+    rms = np.sqrt((frames ** 2).mean(axis=1))
+    loud = np.nonzero(rms >= rms.max() * rel_threshold)[0] if rms.max() > 0 else []
+    if not len(loud):
+        return None
+    return round(loud[0] * window, 3), round((loud[-1] + 1) * window, 3)
+
+
 def wav_peak(path, block_frames=SAMPLE_RATE * 10):
     """Largest absolute sample in a mono 16-bit WAV (0 = completely silent), read in blocks."""
     peak = 0

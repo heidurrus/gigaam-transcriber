@@ -20,8 +20,8 @@ from contextlib import contextmanager
 
 from core.paths import app_data_dir
 
-SCHEMA_VERSION = 1
-SOURCE_KINDS = {"recording", "audio", "transcript", "document"}
+SCHEMA_VERSION = 2
+SOURCE_KINDS = {"recording", "audio", "transcript", "document", "email"}
 SOURCE_STATUSES = {"recorded", "processing", "ready", "failed"}
 
 SCHEMA = """
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS sources (
   kind TEXT NOT NULL, title TEXT NOT NULL, original_filename TEXT,
   status TEXT NOT NULL, error TEXT, duration REAL, speakers INTEGER, asr_model TEXT,
   diarized INTEGER NOT NULL DEFAULT 0, import_format TEXT, audio_file TEXT, text TEXT, words_json TEXT,
-  deleted_at REAL,
+  meta_json TEXT, deleted_at REAL,
   created_at REAL NOT NULL, created_by TEXT NOT NULL, updated_at REAL NOT NULL, updated_by TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS sources_by_project ON sources(project_id, deleted_at, created_at);
 CREATE TABLE IF NOT EXISTS segments (
@@ -57,7 +57,7 @@ CREATE INDEX IF NOT EXISTS audit_by_entity ON audit_log(entity, entity_id, at);
 
 PROJECT_FIELDS = ("id", "name", "local_only", "archived", "created_at", "created_by", "updated_at", "updated_by")
 SOURCE_FIELDS = ("id", "project_id", "kind", "title", "original_filename", "status", "error", "duration",
-                 "speakers", "asr_model", "diarized", "import_format", "audio_file", "deleted_at",
+                 "speakers", "asr_model", "diarized", "import_format", "audio_file", "meta_json", "deleted_at",
                  "created_at", "created_by", "updated_at", "updated_by")
 
 
@@ -82,7 +82,15 @@ class Store:
         self._write_lock = threading.Lock()
         with self._conn() as c:
             c.executescript(SCHEMA)
-            c.execute("INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
+            self._migrate(c)
+            c.execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
+
+    @staticmethod
+    def _migrate(c):
+        """Bring databases created by older versions up to the current schema."""
+        cols = {r["name"] for r in c.execute("PRAGMA table_info(sources)")}
+        if "meta_json" not in cols:                       # v1 → v2: email / document metadata
+            c.execute("ALTER TABLE sources ADD COLUMN meta_json TEXT")
 
     # ── plumbing ─────────────────────────────────────────────────────────────
     @contextmanager
@@ -121,6 +129,9 @@ class Store:
         if row is None:
             return None
         d = {f: row[f] for f in fields}
+        if "meta_json" in d:
+            raw = d.pop("meta_json")
+            d["meta"] = json.loads(raw) if raw else None
         for flag in ("local_only", "archived", "diarized"):
             if flag in d and d[flag] is not None:
                 d[flag] = bool(d[flag])
@@ -255,7 +266,7 @@ class Store:
 
     def update_source(self, source_id, audit=True, **changes):
         allowed = {"title", "status", "error", "duration", "speakers", "asr_model", "diarized",
-                   "import_format", "audio_file", "text", "words_json"}
+                   "import_format", "audio_file", "text", "words_json", "meta_json"}
         unknown = set(changes) - allowed
         if unknown:
             raise StoreError(f"cannot change {sorted(unknown)}")
@@ -322,6 +333,8 @@ class Store:
             changes["asr_model"] = asr_model
         if result.get("imported"):
             changes["import_format"] = result["imported"].get("format")
+        if result.get("email"):
+            changes["meta_json"] = json.dumps({"email": result["email"]}, ensure_ascii=False)
         return self.update_source(source_id, **changes)
 
     def fail_source(self, source_id, error):

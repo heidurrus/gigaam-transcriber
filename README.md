@@ -34,8 +34,8 @@ Full requirements: [`docs/specs/requirements-workbench-spec.md`](docs/specs/requ
 | # | Increment | What you get | Status |
 |---|---|---|---|
 | 0 | **Stable base** | Installers with no prerequisites and automatic setup, native app on Windows and macOS, call recording with separate mic/system channels (incl. macOS system audio), local-only server | ✅ **v2.0** |
-| 1 | Source library | Projects, everything saved locally, sources list, transcript viewer with playback, Russian + English UI | 🟡 **2.2.0**: projects, library, new UI; emails and earlier specs next |
-| 2 | Atoms | AI extraction of requirement atoms with source quotes, review (accept / edit / reject, keyboard), duplicates, conflicts between sources, open questions | planned |
+| 1 | Source library | Projects, everything saved locally, sources list, transcript viewer with playback, emails and documents, channel-aware recordings, Russian + English UI | ✅ **2.3.0** |
+| 2 | Atoms | AI extraction of requirement atoms with source quotes, review (accept / edit / reject, keyboard), duplicates, conflicts between sources, open questions | ⏳ next |
 | 3 | FRD | Document built from accepted atoms, versions and diff, stale-section detection, quality check, DOCX export (neutral or GOST template) | planned |
 | 4 | Backlog & Jira | Epics / stories / acceptance criteria, INVEST check, dry-run preview and push to Jira Cloud through the Atlassian MCP | planned |
 
@@ -55,6 +55,9 @@ See [`CHANGELOG.md`](CHANGELOG.md) for what changed in each release.
   with every GigaAM model, including long files and word timestamps
 - **Import existing transcripts**: Teams (`.vtt`, `.docx`), Zoom / Meet (`.vtt`), `.srt`,
   PDF (with a text layer), plain text with `Name: text` lines. They open instantly, with speakers and timestamps kept
+- **Emails and documents** as sources: `.eml`, Outlook `.msg`, earlier specs and notes (`.docx`, `.pdf`, `.txt`, `.md`)
+- **Projects and a saved library**: everything you record, upload or import is kept, per project.
+  "Local only" projects never use a cloud model
 - **Speaker separation** (who said what) with pyannote
 - **AI summaries** of any transcript: key points, requirements, decisions, open questions,
   action items, each citing speaker and timestamp. Uses **Claude** (add your Anthropic API key

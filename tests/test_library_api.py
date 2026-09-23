@@ -72,7 +72,7 @@ def test_rename_speaker_shows_everywhere_and_feeds_summaries(client, app_module,
                         seen.update(text=text, title=title, provider=prefs["llm_provider"]) or "## Итоги")
     job = client.post("/summarize", json={"source_id": sid}).get_json()["job_id"]
     assert wait_for(lambda: client.get(f"/job/{job}").get_json()["status"] == "done")
-    assert "[Иван Петров]" in seen["text"] and seen["title"] == "Встреча"
+    assert "[Иван Петров]" in seen["text"] and seen["title"] == "Call or meeting — Встреча"
     assert client.get(f"/api/sources/{sid}").get_json()["summary"]["text"] == "## Итоги"
     assert client.get(f"/api/projects/{lib.current_project()['id']}/sources").get_json()["sources"][0]["has_summary"]
 
@@ -153,3 +153,22 @@ def test_unknown_ids(client, lib):
     assert client.get("/api/sources/nope").status_code == 404
     assert client.get("/api/projects/nope/sources").status_code == 404
     assert client.post("/summarize", json={"source_id": "nope"}).status_code == 404
+
+
+def test_email_import_becomes_an_email_source(client, lib):
+    from tests.test_emails import EML
+    body = client.post("/transcribe", data={"audio": (io.BytesIO(EML), "letter.eml")},
+                       content_type="multipart/form-data").get_json()
+    src = client.get(f"/api/sources/{body['source_id']}").get_json()
+    assert src["kind"] == "email" and src["title"] == "Требования к карточке"
+    assert src["meta"]["email"]["from"] == "Иван Петров"
+    assert src["segments"][0]["speaker_name"] == "Иван Петров"
+
+
+def test_prose_import_becomes_a_document(client, lib):
+    text = "Требования заказчика.\n\nСистема должна показывать историю обращений.\n".encode()
+    body = client.post("/transcribe", data={"audio": (io.BytesIO(text), "Требования v2.txt")},
+                       content_type="multipart/form-data").get_json()
+    src = client.get(f"/api/sources/{body['source_id']}").get_json()
+    assert src["kind"] == "document" and src["title"] == "Требования v2"
+    assert [s["text"] for s in src["segments"]] == ["Требования заказчика.", "Система должна показывать историю обращений."]

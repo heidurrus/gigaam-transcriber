@@ -2,7 +2,7 @@
   import Block from "../components/Block.svelte";
   import Icon from "../components/Icon.svelte";
   import { api, pollJob } from "../lib/api.js";
-  import { fmtTime, fmtDate, fmtDuration, renderMarkdown, speakerClass, downloadText } from "../lib/format.js";
+  import { fmtTime, fmtDate, fmtDuration, renderMarkdown, speakerClass, speakerDisplay, downloadText } from "../lib/format.js";
   import { app, t, go, loadSources, toast, rememberSource } from "../lib/state.svelte.js";
 
   let { id, autoSummarize = false } = $props();
@@ -55,6 +55,11 @@
   });
 
   const speakerOrder = $derived(source ? [...new Set(source.segments.map(s => s.speaker).filter(Boolean))] : []);
+  // Documents and emails have no timing: shown as paragraphs, without the time column.
+  const isText = $derived(source ? !source.segments.some(s => s.start != null) : false);
+  const blockTitle = $derived(source?.kind === "email" ? t("tr.block.email")
+    : source?.kind === "document" ? t("tr.block.document") : t("nav.transcript"));
+  const email = $derived(source?.meta?.email || null);
   const activeIdx = $derived.by(() => {
     if (!source || !playing && !now) return -1;
     const segs = source.segments;
@@ -132,7 +137,8 @@
   }
 
   const meta = $derived(source ? [fmtDate(source.created_at, app.lang), t("kind." + source.kind), fmtDuration(source.duration, app.lang),
-    source.speakers ? t("meta.speakers", { n: source.speakers }) : null, source.asr_model || source.import_format]
+    source.speakers && !["email", "document"].includes(source.kind) ? t("meta.speakers", { n: source.speakers }) : null,
+    source.asr_model || source.import_format]
     .filter(Boolean).join(" · ") : "");
 </script>
 
@@ -158,6 +164,9 @@
           </h1>
         {/if}
         <p class="screen-sub mono">{meta}</p>
+        {#if email && (email.from || email.to)}
+          <p class="screen-sub">{#if email.from}{t("tr.email_from")}: {email.from}{/if}{email.from && email.to ? " · " : ""}{#if email.to}{t("tr.email_to")}: {email.to}{/if}</p>
+        {/if}
       </div>
       <div class="actions">
         {#if source.status === "ready"}
@@ -199,14 +208,14 @@
     {#if source.status === "ready"}
       <div class="layout">
         <div class="stack main-col">
-          {#if speakerOrder.length}
+          {#if speakerOrder.length && !isText}
             <Block id="tr-speakers" title={t("tr.speakers")} meta={String(speakerOrder.length)}>
               <p class="hint" style="margin-bottom: var(--s-3)">{t("tr.speaker_hint")}</p>
               <div class="speakers">
                 {#each speakerOrder as label (label)}
                   <label class="speaker">
-                    <span class="chip {speakerClass(label, speakerOrder)}">{label}</span>
-                    <input class="input" bind:value={names[label]} placeholder={label}
+                    <span class="chip {speakerClass(label, speakerOrder)}">{speakerDisplay(label, null, t)}</span>
+                    <input class="input" bind:value={names[label]} placeholder={speakerDisplay(label, null, t)}
                            onblur={() => renameSpeaker(label)} onkeydown={e => e.key === "Enter" && e.currentTarget.blur()} />
                   </label>
                 {/each}
@@ -214,21 +223,26 @@
             </Block>
           {/if}
 
-          <Block id="tr-transcript" title={t("nav.transcript")} meta={t("meta.segments", { n: source.segments.length })}>
+          <Block id="tr-transcript" title={blockTitle}
+                 meta={isText ? t("meta.paragraphs", { n: source.segments.length }) : t("meta.segments", { n: source.segments.length })}>
             {#if !source.segments.length}
               <p class="muted">{t("tr.no_segments")}</p>
             {:else}
-              <div class="segments">
+              <div class="segments" class:prose={isText}>
                 {#each source.segments as seg, i (seg.idx)}
+                  {#if isText}
+                    <p class="para">{seg.text}</p>
+                  {:else}
                   <div class="seg-row" class:active={i === activeIdx} id="seg-{i}">
                     <div class="seg-meta">
                       {#if seg.start != null}
                         <button class="time" disabled={!source.audio_url} onclick={() => seek(seg.start)}>{fmtTime(seg.start)}</button>
                       {/if}
-                      {#if seg.speaker}<span class="chip {speakerClass(seg.speaker, speakerOrder)}">{seg.speaker_name}</span>{/if}
+                      {#if seg.speaker}<span class="chip {speakerClass(seg.speaker, speakerOrder)}">{speakerDisplay(seg.speaker, seg.speaker_name, t)}</span>{/if}
                     </div>
                     <p class="seg-text">{seg.text}</p>
                   </div>
+                  {/if}
                 {/each}
               </div>
             {/if}
@@ -282,5 +296,8 @@
   .time { border: 0; background: none; padding: 0; font-family: var(--mono); font-size: var(--t-xs); color: var(--accent); cursor: pointer; }
   .time:disabled { color: var(--ink-3); cursor: default; }
   .seg-text { line-height: 1.65; }
+  .prose { max-width: 72ch; }
+  .para { line-height: 1.7; margin: 0 0 var(--s-3); }
+  .para:last-child { margin-bottom: 0; }
   @media (max-width: 600px) { .seg-row { grid-template-columns: 1fr; gap: var(--s-1); } .seg-meta { flex-direction: row; align-items: center; } }
 </style>
