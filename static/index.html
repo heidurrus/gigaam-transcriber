@@ -288,6 +288,8 @@
       line-height: 1.7;
       white-space: pre-wrap;
       word-break: break-word;
+      max-height: 45vh;
+      overflow-y: auto;   /* long transcripts scroll inside, so everything else stays in reach */
     }
 
     .copy-btn {
@@ -476,7 +478,7 @@
     .settings-field select, .settings-field input[type=text] {
       width: 100%; background: #0f1117; border: 1px solid #2d3748; border-radius: 8px;
       color: #e2e8f0; font-size: 0.9rem; padding: 9px 12px; }
-    .summary-panel { margin-top: 22px; display: none; }
+    .summary-panel { margin-bottom: 22px; display: none; }
     .summary-text { background: #0f1117; border: 1px solid #2d3748; border-radius: 8px; padding: 14px 18px;
       font-size: 0.95rem; line-height: 1.65; word-break: break-word; }
     .summary-text h3 { font-size: 1rem; margin: 14px 0 6px; color: #e2e8f0; }
@@ -625,11 +627,9 @@
   <div class="status" id="status"></div>
 
   <div class="result-box" id="result-box">
-    <div class="result-label">Transcript</div>
-    <div class="result-text" id="result-text"></div>
-    <div class="result-actions">
-      <button class="copy-btn" id="copy-btn">Copy</button>
+    <div class="result-actions" style="margin-bottom:14px">
       <button class="copy-btn primary" id="summarize-btn">Summarize</button>
+      <button class="copy-btn" id="copy-btn">Copy transcript</button>
     </div>
 
     <div class="summary-panel" id="summary-panel">
@@ -640,6 +640,10 @@
         <button class="copy-btn" id="copy-summary-btn">Copy summary</button>
       </div>
     </div>
+
+    <div class="result-label">Transcript</div>
+    <div class="result-text" id="result-text"></div>
+
 
     <div class="words-table" id="words-table">
       <div class="result-label" style="margin-top:20px;">Word timestamps</div>
@@ -800,14 +804,26 @@
       llm_provider: document.getElementById("llm-provider").value,
       claude_model: document.getElementById("claude-model").value,
       ollama_model: document.getElementById("ollama-model").value.trim() || "qwen3:8b",
-    }).then(info => { if (!info.error) updateLlmSettings(info); });
+    }).then(info => {
+      if (info.error) return;
+      updateLlmSettings(info);
+      if (pendingSummary && info.llm_provider === "ollama") { pendingSummary = false; closeSettings(); runSummary(); }
+    });
   }
 
   function saveAnthropicKey() {
     const input = document.getElementById("anthropic-key-input");
     const key = input.value.trim();
     if (!key) return;
-    postSettings({ anthropic_api_key: key }).then(info => { input.value = ""; updateLlmSettings(info); });
+    postSettings({ anthropic_api_key: key }).then(info => {
+      input.value = "";
+      updateLlmSettings(info);
+      if (pendingSummary && info.anthropic_key_set) {   // continue what the user asked for
+        pendingSummary = false;
+        closeSettings();
+        runSummary();
+      }
+    });
   }
 
   function toggleVisibility(inputId, btnId) {
@@ -1172,13 +1188,19 @@
     lastSummary = "";
   }
 
+  let pendingSummary = false;   // retry after the user adds a key in Settings
+
   async function runSummary() {
     if (!lastResult || !lastResult.text) return;
     summarizeBtn.disabled = true;
     summaryPanel.style.display = "block";
+    summaryPanel.scrollIntoView({ behavior: "smooth", block: "start" });
     summaryText.innerHTML = "";
     summaryMeta.className = "summary-meta";
-    summaryMeta.textContent = "Writing summary…";
+    const started_at = Date.now();
+    const waiting = () => `Writing summary… ${Math.round((Date.now() - started_at) / 1000)} s` +
+      " (long transcripts can take a minute before text appears)";
+    summaryMeta.textContent = waiting();
     try {
       const res = await fetch("/summarize", {
         method: "POST", headers: {"Content-Type": "application/json"},
@@ -1188,12 +1210,17 @@
       if (!res.ok) {
         summaryMeta.textContent = started.error || "Could not start the summary.";
         summaryMeta.className = "summary-meta status error";
-        if (started.needs_setup) openSettings(true);
+        if (started.needs_setup) {
+          pendingSummary = true;
+          summaryMeta.textContent += " The summary will start as soon as you save it.";
+          openSettings(true);
+        }
         return;
       }
       while (true) {
         const job = await (await fetch(`/job/${started.job_id}`)).json();
         if (job.partial) summaryText.innerHTML = renderMarkdown(job.partial);
+        else summaryMeta.textContent = waiting();
         if (job.status === "done") {
           lastSummary = job.result.summary;
           summaryText.innerHTML = renderMarkdown(lastSummary);
@@ -1228,7 +1255,7 @@
   copyBtn.addEventListener("click", () => {
     navigator.clipboard.writeText(resultText.textContent).then(() => {
       copyBtn.textContent = "Copied!";
-      setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500);
+      setTimeout(() => { copyBtn.textContent = "Copy transcript"; }, 1500);
     });
   });
 
