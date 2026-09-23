@@ -33,7 +33,7 @@ Full requirements: [`docs/specs/requirements-workbench-spec.md`](docs/specs/requ
 
 | # | Increment | What you get | Status |
 |---|---|---|---|
-| 0 | **Stable base** | Installers with no prerequisites and automatic setup, native app on Windows and macOS, call recording with separate mic/system channels (incl. macOS system audio), local-only server | ✅ **1.1.0** |
+| 0 | **Stable base** | Installers with no prerequisites and automatic setup, native app on Windows and macOS, call recording with separate mic/system channels (incl. macOS system audio), local-only server | ✅ **v2.0** |
 | 1 | Source library | Projects, everything saved locally, sources list, transcript viewer with playback, Russian + English UI | ⏳ next |
 | 2 | Atoms | AI extraction of requirement atoms with source quotes, review (accept / edit / reject, keyboard), duplicates, conflicts between sources, open questions | planned |
 | 3 | FRD | Document built from accepted atoms, versions and diff, stale-section detection, quality check, DOCX export (neutral or GOST template) | planned |

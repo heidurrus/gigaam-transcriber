@@ -227,7 +227,7 @@ Priority: Should
 As a BA, I want to upload audio, a ready-made transcript, an email or an earlier specification, so that all elicitation material feeds the same pipeline.
 Source: S01 card "Загрузить файл — Аудио, готовый транскрипт, письмо или прошлая спецификация" (Upload a file — audio, ready-made transcript, email or earlier spec); sample `Требования_заказчика_v2.docx` "импорт · 19 атомов".
 Baseline: **audio/video upload exists** [BASE] (drag-and-drop, `accept="audio/*,video/*"`, WAV/MP3/FLAC/OGG/M4A/WebM, ffmpeg conversion). **New:** text-document import (transcript, email, docx spec) and keeping the file as a Source (the baseline deletes the upload after the job).
-**Status:** transcript import brought forward and shipped in 1.2.0 at the PO's request (Teams `.vtt`/`.docx`, Zoom/Meet `.vtt`, `.srt`, PDF with a text layer, plain text with speaker lines, app JSON; `core/transcripts.py`). Emails and earlier specs remain in increment 1; keeping files as Sources comes with persistence (increment 1).
+**Status:** transcript import brought forward and shipped in 2.1.0 at the PO's request (Teams `.vtt`/`.docx`, Zoom/Meet `.vtt`, `.srt`, PDF with a text layer, plain text with speaker lines, app JSON; `core/transcripts.py`). Emails and earlier specs remain in increment 1; keeping files as Sources comes with persistence (increment 1).
 - AC1 Given an audio file When imported Then it is transcribed and then extracted.
 - AC2 Given a text document (transcript/email/spec) When imported Then transcription is skipped and atoms are extracted directly ("импорт").
 - AC3 (negative) Given an unsupported format or a file over the size limit When I select it Then the import is refused with the list of supported formats and the limit. [ASM] (Q-11)
@@ -408,7 +408,7 @@ Priority: Should
 
 **FR-SUM-01 [CONF] Summarise a transcript**
 As a BA, I want a structured summary of any transcript (recorded, uploaded or imported), so that I get the gist and candidate requirements before detailed atom review.
-Source: PO feedback 2026-09-23 ("when I attach a text file it should say summarize"). Implemented in 1.2.0 (`core/summarize.py`).
+Source: PO feedback 2026-09-23 ("when I attach a text file it should say summarize"). Implemented in 2.1.0 (`core/summarize.py`).
 - AC1 Every transcript result offers **Summarize**. Attaching a transcript file runs import + summary in one step.
 - AC2 The summary uses the transcript's language, with sections Summary / Key points / Requirements mentioned / Decisions / Open questions / Action items. Points cite `[speaker, mm:ss]` where the transcript has them (G2 traceability).
 - AC3 Provider per Settings: Claude via the Anthropic API (default `claude-opus-5`, server-side refusal fallback, prompt caching, streaming) or a local Ollama model (FR-SET-02, D-02).
@@ -830,7 +830,7 @@ stateDiagram-v2
 | NFR-I18N-02 | Language support | Russian speech is the primary target; other languages through the multilingual model | WER on RU conversational speech ≤ 15% with rnnt [ASM] | GigaAM, multilingual_large_ctc | [INF] |
 | NFR-COMPAT-01 | Platform | `[CONF]` D-16: a desktop app with **feature parity on Windows and macOS**. Browser mode is optional | Windows 10 (22H2) / 11 x64: native window on WebView2, CUDA or CPU. macOS 13+ on Apple Silicon: native window on WKWebView, MPS. Every feature, recording included, works in desktop mode on both. Browser mode (Chrome/Edge) is an extra. Linux: not a v1 target [ASM]. Intel Macs: CPU only, best effort [ASM] (Q-28) | D-16, baseline `/device-info` | [CONF] |
 | NFR-COMPAT-03 | Installability | `[CONF]` D-17: one package per OS; **all dependencies installed automatically**; no prerequisites | 0 manual steps apart from the HF licence acceptance (guided); no Python/git/brew/winget needed; no admin rights; first-run setup ≤ 15 min on 50 Mbit/s including the ~500 MB model and PyTorch (CUDA build ~2.5 GB) [ASM]; resumable downloads; installer ≤ 150 MB [ASM] | D-17, baseline `installer/` | [CONF] |
-| NFR-COMPAT-04 | Update safety | App updates never break or lose the environment or data | After an update, startup installs only the changed dependencies (FR-PLAT-05); rollback to the previous environment if that fails; project data untouched | D-18 | Transcript summaries (FR-SUM-01) and the LLM settings they need (Claude key, model, Ollama) brought forward into 1.2.0 | PO feedback | FR-SUM-01, FR-SET-02/03 |
+| NFR-COMPAT-04 | Update safety | App updates never break or lose the environment or data | After an update, startup installs only the changed dependencies (FR-PLAT-05); rollback to the previous environment if that fails; project data untouched | D-18 | Transcript summaries (FR-SUM-01) and the LLM settings they need (Claude key, model, Ollama) brought forward into 2.1.0 | PO feedback | FR-SUM-01, FR-SET-02/03 |
 | D-17 | [ASM] |
 | NFR-SEC-06 | Supply chain | Automatically installed components are pinned and verified | Lock file with hashes for Python packages; checksums for ffmpeg and model files; downloads only from an allow-list of hosts (PyPI, download.pytorch.org, GitHub release of GigaAM, Hugging Face, ffmpeg build host, ollama.com); HTTPS only | D-17 | [INF] |
 | NFR-SEC-07 | Code signing | Distributed binaries are signed | macOS: Developer ID + notarization (required for smooth install and for recording permissions); Windows: Authenticode signing of installer and launcher [ASM] (Q-29) | D-16 | [INF] |
@@ -969,7 +969,7 @@ Development starts from `heidurrus/gigaam-transcriber` (commit `74d3289`). `[CON
 ### 12.2 Proposed delivery increments
 | # | Increment | Content | Value | Status |
 |---|---|---|---|---|
-| 0 | Harden the baseline + platform foundation | Loopback-only binding, stream recording to disk, show recorder errors, clean up jobs, UI env checks; **embedded runtime + first-run Setup screen + startup dependency check on Windows and macOS; macOS `.app` packaging; spike for macOS system-audio capture** | Installs and runs as a desktop app on both OSes with zero manual setup | ✅ Implemented in 1.1.0 (2026-09-23), in user testing; app renamed to Requirements Workbench |
+| 0 | Harden the baseline + platform foundation | Loopback-only binding, stream recording to disk, show recorder errors, clean up jobs, UI env checks; **embedded runtime + first-run Setup screen + startup dependency check on Windows and macOS; macOS `.app` packaging; spike for macOS system-audio capture** | Installs and runs as a desktop app on both OSes with zero manual setup | ✅ Implemented in 1.1.0/1.1.1, published as release v2.0 (2026-09-23); app renamed to Requirements Workbench |
 | 1 | Source library | Projects, persistence, sources list (S01), stored transcript viewer with playback (S02), baseline features kept (gap #19), RU/EN i18n | The transcriber becomes a workspace | ⏳ Next |
 | 2 | Atoms | LLM gateway, `extract-requirements` skill, extraction with chunk progress, review UI (S03), dedup, conflicts, open questions | First BA value | Planned |
 | 3 | FRD | Builder, versions, provenance, stale sections, quality check, DOCX, custom skills (S04, S07 skills) | A document to hand over | Planned |

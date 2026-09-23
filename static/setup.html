@@ -5,22 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Setting up — Requirements Workbench</title>
 <style>
+  /* Same tokens as index.html (palette from docs/prototype) */
   :root {
-    --bg: #0f1117; --panel: #1a1d27; --ink: #e2e8f0; --ink-2: #94a3b8; --rule: #2d3148;
-    --accent: #4f8ef7; --ok: #4ade80; --warn: #fbbf24; --danger: #f87171;
+    --paper: #EDEFEC; --panel: #FFFFFF; --sunk: #F5F6F3; --ink: #191C1A; --ink-2: #5E645F; --ink-3: #8A908B;
+    --rule: #DCDFDA; --accent: #2B5B78; --accent-ink: #FFFFFF; --ok: #3A6A4B; --warn: #8A6110; --danger: #9E3626;
+    --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px; --s-6: 32px;
   }
-  @media (prefers-color-scheme: light) {
-    :root { --bg: #f5f6f3; --panel: #fff; --ink: #191c1a; --ink-2: #5e645f; --rule: #dcdfda;
-            --accent: #2b5b78; --ok: #3a6a4b; --warn: #8a6110; --danger: #9e3626; }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper: #15181A; --panel: #1D2124; --sunk: #22262A; --ink: #E6E9E6; --ink-2: #A2A9A5; --ink-3: #7C837E;
+            --rule: #2E3337; --accent: #8FBBD6; --accent-ink: #11202A; --ok: #8CBE9B; --warn: #D9AC5C; --danger: #E0917F; }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink);
-         font: 14px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width: 640px; margin: 0 auto; padding: 40px 20px 60px; }
-  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
-  .sub { color: var(--ink-2); margin: 0 0 24px; }
-  .step { display: flex; gap: 12px; padding: 14px 16px; background: var(--panel);
-          border: 1px solid var(--rule); border-radius: 6px; margin-bottom: 10px; }
+  body { margin: 0; background: var(--paper); color: var(--ink);
+         font: 14px/1.55 "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  main { width: min(640px, 100%); margin: 0 auto; padding: var(--s-6) clamp(var(--s-4), 4vw, var(--s-6)) var(--s-6); }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 var(--s-1); }
+  .sub { color: var(--ink-2); margin: 0 0 var(--s-5); }
+  .step { display: flex; gap: var(--s-3); padding: var(--s-3) var(--s-4); background: var(--panel);
+          border: 1px solid var(--rule); border-radius: 6px; margin-bottom: var(--s-2); }
   .icon { width: 20px; flex: none; text-align: center; font-weight: 700; }
   .grow { flex: 1; min-width: 0; }
   .title { font-weight: 600; }
@@ -30,18 +32,20 @@
   .failed .icon, .failed .msg { color: var(--danger); }
   .manual .icon { color: var(--warn); }
   .running .icon, .checking .icon { color: var(--accent); }
-  pre { margin: 8px 0 0; max-height: 7.5em; overflow: auto; font-size: 11px; color: var(--ink-2);
-        background: var(--bg); padding: 6px 8px; border-radius: 4px; white-space: pre-wrap; }
+  pre { margin: var(--s-2) 0 0; max-height: 7.5em; overflow: auto; font-size: 11px; color: var(--ink-2);
+        background: var(--sunk); padding: var(--s-1) var(--s-2); border-radius: 4px; white-space: pre-wrap;
+        font-family: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace; }
   a { color: var(--accent); }
-  .bar { height: 4px; background: var(--rule); border-radius: 2px; overflow: hidden; margin: 0 0 20px; }
+  .bar { height: 4px; background: var(--rule); border-radius: 2px; overflow: hidden; margin: 0 0 var(--s-5); }
   .bar i { display: block; height: 100%; background: var(--accent); transition: width .3s; }
-  .foot { margin-top: 20px; display: flex; gap: 12px; align-items: center; }
-  button { font: inherit; padding: 7px 16px; border-radius: 4px; border: 0; cursor: pointer;
-           background: var(--accent); color: #fff; }
+  .foot { margin-top: var(--s-5); display: flex; gap: var(--s-3); align-items: center; flex-wrap: wrap; }
+  button { font: inherit; font-weight: 500; height: 36px; padding: 0 var(--s-4); border-radius: 6px; border: 0; cursor: pointer;
+           background: var(--accent); color: var(--accent-ink); }
   button[hidden] { display: none; }
   .note { color: var(--ink-2); font-size: 12.5px; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .running .icon span { display: inline-block; animation: spin 1s linear infinite; }
+  .spin { display: inline-block; width: 12px; height: 12px; margin-top: 4px; border: 2px solid var(--rule);
+          border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
 </style>
 </head>
 <body>
@@ -56,7 +60,7 @@
   </div>
 </main>
 <script>
-  const ICONS = { pending: "·", checking: "…", running: "<span>◌</span>", done: "✓", failed: "✕", manual: "!" };
+  const ICONS = { pending: "·", checking: "…", running: '<span class="spin"></span>', done: "✓", failed: "✕", manual: "!" };
   const stepsEl = document.getElementById("steps");
   const retryBtn = document.getElementById("retry");
   const note = document.getElementById("note");
