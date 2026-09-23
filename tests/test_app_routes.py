@@ -162,3 +162,14 @@ def test_unreadable_transcript_is_a_clear_400(client):
                       content_type="multipart/form-data")
     assert res.status_code == 400
     assert "Could not read this transcript" in res.get_json()["error"]
+
+
+def test_pdf_transcript_upload(client):
+    import os
+    with open(os.path.join(os.path.dirname(__file__), "fixtures", "teams_ru.pdf"), "rb") as f:
+        pdf = f.read()
+    res = client.post("/transcribe", data={"audio": (io.BytesIO(pdf), "Встреча.pdf")},
+                      content_type="multipart/form-data")
+    job = client.get(f"/job/{res.get_json()['job_id']}").get_json()
+    assert job["status"] == "done" and job["result"]["imported"]["format"] == "pdf"
+    assert {s.get("speaker") for s in job["result"]["segments"]} >= {"Иван Петров", "Анна Смирнова"}

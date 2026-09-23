@@ -1,10 +1,11 @@
 import io
+import os
 import json
 import zipfile
 
 import pytest
 
-from core.transcripts import (TranscriptError, decode_text, is_transcript_file, parse_timestamp,
+from core.transcripts import (MAX_BYTES, TranscriptError, decode_text, is_transcript_file, parse_timestamp,
                               parse_transcript)
 
 TEAMS_VTT = """WEBVTT
@@ -152,7 +153,7 @@ def test_errors():
     with pytest.raises(TranscriptError):
         parse_transcript("broken.docx", b"not a zip")
     with pytest.raises(TranscriptError):
-        parse_transcript("big.txt", b"a" * (20 * 1024 * 1024 + 1))
+        parse_transcript("big.txt", b"a" * (MAX_BYTES + 1))
 
 
 def test_timestamps():
@@ -164,3 +165,57 @@ def test_timestamps():
 def test_extension_detection():
     assert is_transcript_file("Meeting Transcript.VTT") and is_transcript_file("a.docx")
     assert not is_transcript_file("call.webm") and not is_transcript_file("noext")
+
+
+# ── PDF ──────────────────────────────────────────────────────────────────────
+FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
+
+
+def fixture(name):
+    with open(os.path.join(FIXTURES, name), "rb") as f:
+        return f.read()
+
+
+def test_pdf_teams_style_russian():
+    r = parse_transcript("Транскрипт.pdf", fixture("teams_ru.pdf"))
+    assert r["imported"]["format"] == "pdf"
+    turns = [s for s in r["segments"] if s.get("speaker")]
+    assert turns == [
+        {"speaker": "Иван Петров", "start": 3.0, "end": 41.0,
+         "text": "Смотрите, основная боль сейчас в том, что оператор не понимает, кто звонит."},
+        {"speaker": "Анна Смирнова", "start": 41.0, "text": "Да, карточка должна уже висеть до поднятия трубки."},
+    ]
+
+
+def test_pdf_page_footers_are_dropped_and_wrapped_lines_joined():
+    r = parse_transcript("export.pdf", fixture("two_pages_footer.pdf"))
+    assert [s.get("speaker") for s in r["segments"]] == ["Ivan Petrov", "Anna Smirnova"]
+    assert r["segments"][0]["text"] == "The caller card must open before the operator answers the call."
+    assert "Страница" not in r["text"]
+
+
+def _pdf_bytes(writer):
+    buf = io.BytesIO()
+    writer.write(buf)
+    return buf.getvalue()
+
+
+def test_scanned_pdf_without_text_layer_is_explained():
+    from pypdf import PdfWriter
+    w = PdfWriter()
+    w.add_blank_page(width=595, height=842)
+    with pytest.raises(TranscriptError, match="no text layer"):
+        parse_transcript("scan.pdf", _pdf_bytes(w))
+
+
+def test_password_protected_pdf_is_explained():
+    from pypdf import PdfReader, PdfWriter
+    w = PdfWriter(clone_from=PdfReader(io.BytesIO(fixture("teams_ru.pdf"))))
+    w.encrypt("secret")
+    with pytest.raises(TranscriptError, match="password"):
+        parse_transcript("locked.pdf", _pdf_bytes(w))
+
+
+def test_broken_pdf_is_explained():
+    with pytest.raises(TranscriptError, match="PDF"):
+        parse_transcript("broken.pdf", b"%PDF-1.4 garbage")
