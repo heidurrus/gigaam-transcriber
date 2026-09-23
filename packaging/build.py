@@ -207,7 +207,9 @@ def build_windows(skip_installer=False):
         install_base_layer(runtime_python(runtime, "windows"))
     else:
         log("Not on Windows: installing Windows wheels with uv cross-install")
-        run([sys.executable, "-m", "uv", "pip", "install", "--python-platform", "x86_64-pc-windows-msvc",
+        import importlib.util
+        uv = [sys.executable, "-m", "uv"] if importlib.util.find_spec("uv") else [shutil.which("uv") or "uv"]
+        run(uv + ["pip", "install", "--python-platform", "x86_64-pc-windows-msvc",
              "--python-version", "3.12", "--target", os.path.join(runtime, "Lib", "site-packages"),
              "-r", os.path.join(ROOT, "requirements.txt")])
     trim_runtime(runtime)

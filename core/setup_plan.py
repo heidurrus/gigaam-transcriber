@@ -62,12 +62,28 @@ def _version_tuple(v):
 _REQ_RE = re.compile(r"^\s*([A-Za-z0-9_.\-]+)(?:\[[^\]]*\])?\s*(?:(>=|==)\s*([\w.]+))?")
 
 
-def parse_requirements(path):
+_MARKER_RE = re.compile(r"""^\s*sys_platform\s*(==|!=)\s*["']([^"']+)["']\s*$""")
+
+
+def marker_applies(marker, platform=None):
+    """Evaluate the simple `sys_platform == "darwin"` markers used in requirements.txt."""
+    platform = platform or sys.platform
+    m = _MARKER_RE.match(marker)
+    if not m:
+        raise ValueError(f"unsupported requirement marker: {marker!r}")
+    return (platform == m.group(2)) == (m.group(1) == "==")
+
+
+def parse_requirements(path, platform=None):
     reqs = []
     with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.split("#", 1)[0].strip()
             if not line or line.startswith("-"):
+                continue
+            line, _, marker = line.partition(";")
+            line = line.strip()
+            if marker.strip() and not marker_applies(marker.strip(), platform):
                 continue
             m = _REQ_RE.match(line)
             if m:

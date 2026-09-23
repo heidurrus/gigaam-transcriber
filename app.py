@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 from flask import Flask, request, jsonify, send_file, send_from_directory
 
 from core.ffmpeg import ensure_ffmpeg_on_path
+from core import macos_audio
 from core.jobs import JobStore, SerialQueue
 from core.paths import models_dir, recordings_dir, use_app_model_cache
 from core.recorder import SAMPLE_RATE as REC_SAMPLE_RATE, DualChannelRecorder, mix_wavs
@@ -56,6 +57,7 @@ transcription_queue = SerialQueue()  # one transcription at a time (spec D-12)
 
 _recorder = None
 _recorder_lock = threading.Lock()
+_active_tap = None  # macOS system-audio tap while recording
 IS_DESKTOP = False
 
 AVAILABLE_MODELS = [
@@ -323,12 +325,28 @@ def _mic_source(device_index):
     return source
 
 
-def _system_source():
-    """System-audio loopback. soundcard loopback supports Windows (WASAPI) and Linux only."""
+def system_audio_support():
+    """(supported, reason) for desktop-mode system-audio capture, without opening anything."""
     if sys.platform == "darwin":
-        # Native macOS capture (ScreenCaptureKit / Core Audio taps) is spec FR-PLAT-02.
-        return ("system audio capture in the desktop app is not supported on macOS yet — "
-                "use browser mode (Open in browser) to include call audio")
+        return macos_audio.support()
+    return True, None
+
+
+def _system_source():
+    """A recorder source for system audio, or a string saying why it's unavailable.
+
+    macOS: Core Audio process tap (spec FR-PLAT-02), opened here, before the mic
+    stream starts, because it makes PortAudio re-scan devices. Windows/Linux:
+    soundcard loopback (WASAPI / PulseAudio).
+    """
+    if sys.platform == "darwin":
+        ok, reason = macos_audio.support()
+        if not ok:
+            return reason
+        try:
+            return macos_audio.SystemAudioTap().open()
+        except Exception as e:
+            return f"system audio unavailable: {e}"
 
     def source(stop):
         import numpy as np
@@ -342,19 +360,30 @@ def _system_source():
     return source
 
 
+def _close_active_tap():
+    global _active_tap
+    if _active_tap is not None:
+        try:
+            _active_tap.close()
+        finally:
+            _active_tap = None
+
+
 @app.route("/desktop-record/start", methods=["POST"])
 def desktop_record_start():
     """Start recording mic + system audio as separate channels (desktop app mode)."""
-    global _recorder
+    global _recorder, _active_tap
     data = request.get_json(silent=True) or {}
     mic_index = data.get("mic_device")  # sounddevice index or None for default
 
     with _recorder_lock:
         if _recorder is not None and _recorder.recording:
             return jsonify({"error": "A recording is already in progress"}), 409
+        sys_source = _system_source()
+        _active_tap = sys_source if hasattr(sys_source, "close") else None
         _recorder = DualChannelRecorder(
             recordings_dir(),
-            {"mic": _mic_source(mic_index), "sys": _system_source()},
+            {"mic": _mic_source(mic_index), "sys": sys_source},
         )
         recording_id = _recorder.start()
     return jsonify({"ok": True, "recording_id": recording_id})
@@ -376,6 +405,7 @@ def desktop_record_stop():
         if _recorder is None or not _recorder.recording:
             return jsonify({"error": "No recording in progress"}), 409
         result = _recorder.stop()
+        _close_active_tap()
 
     captured = [result[c] for c in ("sys", "mic") if result.get(c)]
     if not captured:
@@ -410,7 +440,7 @@ def health():
         "hf_token": bool(hf_token),
         "ollama": ollama_reachable(),
         "platform": sys.platform,
-        "system_audio_capture": not isinstance(_system_source(), str),
+        "system_audio_capture": system_audio_support()[0],
     })
 
 

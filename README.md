@@ -103,10 +103,10 @@ python3 launcher.py --browser  # optional: open in Chrome/Edge instead
 The server listens on `127.0.0.1:5000` only and never accepts connections from
 other machines. Starting the app a second time just shows the running one.
 
-**macOS note:** on first launch macOS asks for microphone permission. In the desktop
-window, system-audio capture on macOS isn't supported yet (it's planned). Use
-browser mode in Chrome to record call audio; Chrome needs Screen Recording permission
-(System Settings → Privacy & Security → Screen Recording).
+**macOS note:** on first recording macOS asks for microphone and "system audio
+recording" permission for the app — allow both. On macOS 14.2+ the desktop app
+records call audio itself (no browser, screen sharing or virtual audio driver
+needed). On macOS 13 use browser mode in Chrome for call audio.
 
 ### Development
 
@@ -156,7 +156,7 @@ Model weights download from HuggingFace on first use and are cached locally. Sub
 
 **Diarization is slow** — expected on CPU. A supported GPU is used automatically and is much faster.
 
-**macOS: call recorder doesn't capture system audio** — Safari and Firefox don't support `getDisplayMedia` with system audio. Use Chrome. When the screen-share dialog appears, check "Share system audio" (or "Share tab audio" if recording a specific tab).
+**macOS: recording has no call audio** — check System Settings → Privacy & Security → *Screen & System Audio Recording* and allow GigaAM Transcriber (macOS 14.2+). In browser mode, use Chrome and tick "Share system audio" in the share dialog.
 
 **macOS: "command not found: python"** — use `python3` instead, or create an alias: `alias python=python3`.
 

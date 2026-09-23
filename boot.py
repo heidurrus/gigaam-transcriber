@@ -73,9 +73,11 @@ def ensure_venv(root=None, run=subprocess.run):
 def self_test():
     """`boot.py --self-test`: verify the bundled runtime without opening a window."""
     root = ensure_venv()
+    modules = ["flask", "webview", "numpy", "uv", "sounddevice", "soundcard", "dotenv"]
+    if sys.platform == "darwin":
+        modules.append("CoreAudio")  # system-audio capture (FR-PLAT-02)
     code = ("import json, sys, importlib.util as u; print(json.dumps({'python': sys.version.split()[0], "
-            "'prefix': sys.prefix, 'base': {m: bool(u.find_spec(m)) for m in "
-            "['flask', 'webview', 'numpy', 'uv', 'sounddevice', 'soundcard', 'dotenv']}}))")
+            f"'prefix': sys.prefix, 'base': {{m: bool(u.find_spec(m)) for m in {modules!r}}}}}))")
     out = subprocess.run([venv_python(root), "-c", code], capture_output=True, text=True)
     report = json.loads(out.stdout) if out.returncode == 0 else {"error": out.stderr}
     report["venv"] = root
