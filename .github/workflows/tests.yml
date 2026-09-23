@@ -22,3 +22,24 @@ jobs:
         run: python -m pyflakes app.py launcher.py boot.py core tests packaging
       - name: Test
         run: python -m pytest -q
+
+  frontend:
+    # The built UI (static/app) is committed so the app runs without Node; make sure
+    # it matches frontend/ and passes the Svelte checks.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Install
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+      - name: Svelte check
+        working-directory: frontend
+        run: npx svelte-check --threshold warning
+      - name: Build and compare with the committed output
+        working-directory: frontend
+        run: |
+          npm run build
+          git diff --exit-code -- ../static/app || (echo "static/app is out of date: run 'npm run build' in frontend/ and commit" && exit 1)

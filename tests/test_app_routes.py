@@ -93,7 +93,9 @@ def test_desktop_recording_roundtrip_keeps_separate_channels(client, app_module,
     assert res.status_code == 200 and res.mimetype == "audio/wav"
     assert json.loads(res.headers["X-Recording-Errors"]) == {}
 
-    folder = os.path.join(os.environ["WORKBENCH_DATA_DIR"], "recordings", res.headers["X-Recording-Id"])
+    source = app_module.library.get_source(res.headers["X-Source-Id"])
+    assert source["kind"] == "recording" and source["status"] == "recorded" and source["audio_file"] == "mixed.wav"
+    folder = app_module.library.source_dir(source)
     assert set(read_wav(os.path.join(folder, "mic.wav"))) == {1000}
     assert set(read_wav(os.path.join(folder, "sys.wav"))) == {2000}
     mixed = np.frombuffer(res.data[44:], dtype="<i2")
@@ -119,25 +121,28 @@ def test_stop_when_not_recording_is_409(client, app_module, monkeypatch):
     assert client.post("/desktop-record/stop").status_code == 409
 
 
-def test_transcribe_cleans_up_upload_and_converted_file(client, app_module, monkeypatch, tmp_path):
-    seen = {}
-
+def test_upload_is_saved_as_a_source_with_its_transcript(client, app_module, monkeypatch):
     def fake_convert(path):
         wav = path + ".wav"
         open(wav, "wb").write(b"RIFF")
-        seen["upload"], seen["wav"] = path, wav
         return wav
 
     monkeypatch.setattr(app_module, "convert_to_wav", fake_convert)
-    monkeypatch.setattr(app_module, "_transcribe", lambda *a: {"text": "привет"})
+    monkeypatch.setattr(app_module, "_transcribe", lambda *a: {
+        "text": "[SPEAKER_00] привет", "diarized": True,
+        "segments": [{"speaker": "SPEAKER_00", "start": 0.0, "end": 1.5, "text": "привет"}]})
 
-    res = client.post("/transcribe", data={"audio": (io.BytesIO(b"webm"), "call.webm")},
+    res = client.post("/transcribe", data={"audio": (io.BytesIO(b"webm"), "Созвон 12.03.webm")},
                       content_type="multipart/form-data")
-    job_id = res.get_json()["job_id"]
-    assert wait_for(lambda: client.get(f"/job/{job_id}").get_json()["status"] == "done")
-    assert client.get(f"/job/{job_id}").get_json()["result"] == {"text": "привет"}
-    assert not os.path.exists(seen["upload"]), "original upload must be deleted (baseline leaked it)"
-    assert not os.path.exists(seen["wav"])
+    body = res.get_json()
+    assert wait_for(lambda: client.get(f"/job/{body['job_id']}").get_json()["status"] == "done")
+    assert client.get(f"/job/{body['job_id']}").get_json()["result"]["source_id"] == body["source_id"]
+
+    src = client.get(f"/api/sources/{body['source_id']}").get_json()
+    assert src["title"] == "Созвон 12.03" and src["status"] == "ready" and src["duration"] == 1.5
+    assert src["segments"][0]["text"] == "привет" and src["audio_url"].endswith("/audio")
+    folder = app_module.library.source_dir(src)
+    assert sorted(os.listdir(folder)) == ["audio.wav", "original.webm"], "files are kept with the source"
 
 
 def test_transcribe_error_is_reported(client, app_module, monkeypatch):
@@ -228,7 +233,7 @@ def test_summarize_streams_partial_text_into_the_job(client, app_module, monkeyp
     release.set()
     assert wait_for(lambda: client.get(f"/job/{job_id}").get_json()["status"] == "done")
     assert client.get(f"/job/{job_id}").get_json()["result"] == {
-        "summary": "## Итоги\nГотово", "provider": "claude", "model": "claude-opus-5"}
+        "summary": "## Итоги\nГотово", "provider": "claude", "model": "claude-opus-5", "source_id": None}
 
 
 def test_summary_errors_are_reported(client, app_module, monkeypatch, tmp_path):
@@ -260,3 +265,20 @@ def test_completely_silent_system_audio_gets_a_hint(client, app_module, monkeypa
     assert wait_for(lambda: client.get("/desktop-record/status").get_json()["channels"]["sys"]["frames"] == 3072)
     res = client.post("/desktop-record/stop")
     assert "Screen & System Audio Recording" in json.loads(res.headers["X-Recording-Errors"])["sys"]
+
+
+def test_new_app_is_served_at_root_and_classic_page_remains(client):
+    root = client.get("/")
+    assert root.status_code == 200 and b'id="app"' in root.data and b"/static/app/assets/" in root.data
+    asset = root.data.decode().split('src="')[1].split('"')[0]
+    assert client.get(asset).status_code == 200
+    classic = client.get("/classic")
+    assert classic.status_code == 200 and b"drop-zone" in classic.data
+
+
+def test_recording_gets_the_title_the_ui_sends(client, app_module, monkeypatch):
+    _use_fake_sources(app_module, monkeypatch, tone_source(3, 2), tone_source(4, 2))
+    client.post("/desktop-record/start", json={})
+    assert wait_for(lambda: client.get("/desktop-record/status").get_json()["channels"]["mic"]["frames"] == 2048)
+    res = client.post("/desktop-record/stop", json={"title": "Запись 23.09.2026, 10:15"})
+    assert app_module.library.get_source(res.headers["X-Source-Id"])["title"] == "Запись 23.09.2026, 10:15"
