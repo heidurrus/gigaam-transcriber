@@ -24,6 +24,8 @@ from core.jobs import JobStore, SerialQueue
 from core.paths import models_dir, recordings_dir, use_app_model_cache
 from core.recorder import SAMPLE_RATE as REC_SAMPLE_RATE, DualChannelRecorder, mix_wavs
 from core.security import install_local_only_guard
+from core.transcripts import (MAX_BYTES as MAX_TRANSCRIPT_BYTES, TranscriptError,
+                              is_transcript_file, parse_transcript)
 
 load_dotenv()
 use_app_model_cache()
@@ -494,6 +496,18 @@ def save_settings():
 def transcribe():
     if "audio" not in request.files:
         return jsonify({"error": "No audio file provided"}), 400
+
+    upload = request.files["audio"]
+    if is_transcript_file(upload.filename):
+        # A ready-made transcript (Teams/Zoom .vtt, .srt, .docx, .txt…) skips
+        # speech recognition entirely (spec FR-SRC-03 AC2).
+        try:
+            result = parse_transcript(upload.filename, upload.read(MAX_TRANSCRIPT_BYTES + 1))
+        except TranscriptError as e:
+            return jsonify({"error": f"Could not read this transcript: {e}"}), 400
+        job_id = jobs.create()
+        jobs.finish(job_id, result)
+        return jsonify({"job_id": job_id})
 
     model_name = request.form.get("model", "v3_e2e_rnnt")
     word_timestamps = request.form.get("word_timestamps", "false").lower() == "true"
