@@ -678,7 +678,7 @@
     if (window.pywebview && window.pywebview.api) {
       window.pywebview.api.open_in_browser();
     } else {
-      window.open("http://127.0.0.1:5000", "_blank");
+      window.open(window.location.origin, "_blank");
     }
   }
 
