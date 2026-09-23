@@ -30,6 +30,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Files]
 ; App files
 Source: "..\app.py";            DestDir: "{app}";          Flags: ignoreversion
+Source: "..\core\*.py";         DestDir: "{app}\core";     Flags: ignoreversion
 Source: "..\requirements.txt";  DestDir: "{app}";          Flags: ignoreversion
 Source: "..\static\*";          DestDir: "{app}\static";   Flags: ignoreversion recursesubdirs createallsubdirs
 ; Installer helpers
