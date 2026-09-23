@@ -14,7 +14,7 @@ import anthropic
 
 SYSTEM_PROMPT = """You summarise meeting and call transcripts for a business analyst who gathers requirements from clients.
 
-Write the summary in the same language as the transcript. Use Markdown with these sections, leaving out any section that would be empty:
+Write the whole summary, including the section headings, in the same language as the transcript (for a Russian transcript, translate the headings below into Russian). Use Markdown with these sections, leaving out any section that would be empty:
 
 ## Summary
 A short paragraph: who met, what it was about, the outcome.

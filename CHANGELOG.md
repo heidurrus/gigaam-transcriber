@@ -12,6 +12,11 @@
   - **Local model via Ollama** (e.g. `qwen3:8b`): nothing leaves your computer.
   - Clear messages for a wrong key, rate limits, overload, no internet, or Ollama not running.
 - Attaching a transcript file now says **Summarize**, and summarises right away.
+- The **Summarize** button and the summary sit at the top of the results (the summary
+  used to appear below a long transcript, out of sight). The page scrolls to the summary,
+  shows elapsed time while waiting, and long transcripts scroll in their own box.
+- If Summarize needs a key, entering it in Settings continues the summary automatically.
+- Summary headings are written in the transcript's language too.
 - **Fixed:** PDFs and transcript files were greyed out in the macOS desktop file picker.
 - **Fixed:** keys and tokens from Settings are now stored in your user folder
   (private to you), not inside the app, where saving could break the macOS app or be
