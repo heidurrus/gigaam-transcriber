@@ -21,6 +21,7 @@ from flask import Flask, request, jsonify, send_file, send_from_directory
 from core.ffmpeg import ensure_ffmpeg_on_path
 from core import macos_audio, settings
 from core.summarize import SummaryError, summarize
+from core.atoms import extract_atoms
 from core.jobs import JobStore, SerialQueue
 from core.paths import models_dir, recordings_dir, use_app_model_cache
 from core.macos_permissions import microphone_access
@@ -869,6 +870,94 @@ def api_transcribe_source(source_id):
 def api_audit():
     return jsonify({"entries": library.audit(request.args.get("entity"), request.args.get("entity_id"),
                                              min(int(request.args.get("limit", 200)), 1000))})
+
+
+# ── requirement atoms (increment 2) ─────────────────────────────────────────
+_extracting = {}          # source_id → job_id, so a double click doesn't run two extractions
+
+
+def _run_extraction(job_id, source_id, prefs, api_key):
+    def progress(done, total, message):
+        jobs.set_progress(job_id, int(100 * done / max(total, 1)), message)
+    try:
+        result = extract_atoms(library, source_id, prefs, api_key, OLLAMA_URL, progress=progress)
+    except SummaryError as e:
+        jobs.fail(job_id, e)
+    except Exception as e:  # unexpected: keep the message, don't crash the worker
+        jobs.fail(job_id, f"Extraction failed: {e}")
+    else:
+        library.audit_event("source", source_id, "extract_atoms", after=result)
+        jobs.finish(job_id, {**result, "source_id": source_id})
+    finally:
+        _extracting.pop(source_id, None)
+
+
+@app.route("/api/sources/<source_id>/atoms/extract", methods=["POST"])
+def api_extract_atoms(source_id):
+    try:
+        source = library.get_source(source_id)
+    except StoreError as e:
+        return jsonify({"error": str(e)}), 404
+    if source["status"] != "ready":
+        return jsonify({"error": "This source has no text yet."}), 400
+    running = _extracting.get(source_id)
+    if running and (jobs.get(running) or {}).get("status") == "processing":
+        return jsonify({"job_id": running, "source_id": source_id})
+    prefs = settings.load_settings()
+    if library.get_project(source["project_id"])["local_only"]:
+        prefs = {**prefs, "llm_provider": "ollama"}
+    api_key = settings.secret("ANTHROPIC_API_KEY")
+    if prefs["llm_provider"] == "claude" and not api_key:
+        return jsonify({"error": "Add your Anthropic API key in Settings, or choose a local model.",
+                        "needs_setup": True}), 400
+    job_id = jobs.create()
+    _extracting[source_id] = job_id
+    jobs.set_progress(job_id, 0, "Reading the source…")
+    threading.Thread(target=_run_extraction, args=(job_id, source_id, prefs, api_key), daemon=True).start()
+    return jsonify({"job_id": job_id, "source_id": source_id})
+
+
+@app.route("/api/projects/<project_id>/atoms")
+def api_atoms(project_id):
+    try:
+        library.get_project(project_id)
+    except StoreError as e:
+        return jsonify({"error": str(e)}), 404
+    a = request.args
+    atoms = library.list_atoms(project_id, status=a.get("status"), type=a.get("type"), source_id=a.get("source_id"))
+    if a.get("status") is None:
+        atoms = [x for x in atoms if x["status"] != "merged"]
+    return jsonify({"atoms": atoms, "stats": library.atom_stats(project_id)})
+
+
+@app.route("/api/atoms/<atom_id>", methods=["PATCH"])
+def api_update_atom(atom_id):
+    data = request.get_json(silent=True) or {}
+    changes = dict(data)            # the store rejects fields that can't be changed
+
+    def update():
+        atom = library.update_atom(atom_id, **changes)
+        if atom["type"] == "question" and changes.get("status") == "accepted":
+            library.answer_question(atom_id)      # answering a conflict's question closes the conflict
+        return {**atom, "stats": library.atom_stats(atom["project_id"])}
+    return _store_call(update)
+
+
+@app.route("/api/atoms/<atom_id>/merge", methods=["POST"])
+def api_merge_atom(atom_id):
+    into = (request.get_json(silent=True) or {}).get("into")
+    return _store_call(lambda: (library.merge_atoms(atom_id, into), library.get_atom(into))[1])
+
+
+@app.route("/api/projects/<project_id>/conflicts")
+def api_conflicts(project_id):
+    return _store_call(lambda: {"conflicts": library.list_conflicts(project_id)})
+
+
+@app.route("/api/conflicts/<conflict_id>/resolve", methods=["POST"])
+def api_resolve_conflict(conflict_id):
+    data = request.get_json(silent=True) or {}
+    return _store_call(library.resolve_conflict, conflict_id, data.get("action"), data.get("statement"))
 
 
 if __name__ == "__main__":
