@@ -274,13 +274,16 @@ class Store:
 
     def list_sources(self, project_id):
         with self._conn() as c:
-            rows = c.execute("""SELECT s.*, (SELECT COUNT(*) FROM summaries m WHERE m.source_id = s.id) AS summary_count
+            rows = c.execute("""SELECT s.*, (SELECT COUNT(*) FROM summaries m WHERE m.source_id = s.id) AS summary_count,
+                                  (SELECT COUNT(DISTINCT e.atom_id) FROM evidence e JOIN atoms a ON a.id = e.atom_id
+                                   WHERE e.source_id = s.id AND a.status != 'merged') AS atom_count
                                 FROM sources s WHERE s.project_id = ? AND s.deleted_at IS NULL
                                 ORDER BY s.created_at DESC""", (project_id,)).fetchall()
         out = []
         for r in rows:
             s = self._row(r, SOURCE_FIELDS)
             s["has_summary"] = r["summary_count"] > 0
+            s["atom_count"] = r["atom_count"]
             out.append(s)
         return out
 

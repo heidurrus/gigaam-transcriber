@@ -12,7 +12,9 @@ export function writePref(key, value) {
 
 export function parseRoute(hash = location.hash) {
   const parts = hash.replace(/^#\/?/, "").split("/").filter(Boolean);
-  if (parts[0] === "source" && parts[1]) return { name: "transcript", id: parts[1], summarize: parts[2] === "summarize" };
+  if (parts[0] === "source" && parts[1]) return { name: "transcript", id: parts[1], summarize: parts[2] === "summarize",
+                                                  seg: parts[2] === "seg" ? Number(parts[3]) : null };
+  if (parts[0] === "atoms") return { name: "atoms", source: parts[1] === "source" ? parts[2] : null };
   if (parts[0] === "settings") return { name: "settings" };
   if (parts[0] === "transcript") return { name: "transcript", id: null };
   return { name: "sources" };
@@ -33,6 +35,9 @@ export const app = $state({
   toast: null,
   // source id → { jobId, progress, message } for work started in this session
   jobs: {},
+  // source id → { jobId, progress, message } for atom extraction
+  extracting: {},
+  atomsVersion: 0,          // bumped when atoms change elsewhere, so open screens reload
 });
 
 export const t = (key, vars) => translate(app.lang, key, vars);
