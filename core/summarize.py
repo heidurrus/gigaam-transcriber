@@ -12,6 +12,8 @@ import urllib.request
 
 import anthropic
 
+from core.llm import LLMError, claude_errors, claude_params
+
 SYSTEM_PROMPT = """You summarise sources for a business analyst who gathers requirements from clients: call and meeting transcripts, emails, and documents such as earlier specifications. The first line tells you which kind it is.
 
 Write the whole summary, including the section headings, in the same language as the transcript (for a Russian transcript, translate the headings below into Russian). Use Markdown with these sections, leaving out any section that would be empty:
@@ -35,13 +37,8 @@ Who does what, and by when if it was said.
 
 Refer to the source of each point with the speaker and timestamp in square brackets, e.g. [Anna, 12:30], when the transcript has them; for an email, name the sender when it matters. Only state what the transcript supports; if something is unclear, say so rather than guessing."""
 
-CLAUDE_MAX_TOKENS = 32000
-FALLBACK_BETA = "server-side-fallback-2026-07-01"
-MODELS_WITH_DEFAULT_FALLBACKS = {"claude-opus-5"}
-
-
-class SummaryError(Exception):
-    """A user-facing problem (bad key, no internet, model missing…)."""
+# The same user-facing error for summaries and extraction.
+SummaryError = LLMError
 
 
 def _user_content(transcript, title=None):
@@ -55,40 +52,12 @@ def summarize_with_claude(transcript, model, api_key, on_delta, title=None, clie
     if not api_key:
         raise SummaryError("Add your Anthropic API key in Settings to create summaries with Claude.")
     client = client or anthropic.Anthropic(api_key=api_key)
-    params = dict(
-        model=model,
-        max_tokens=CLAUDE_MAX_TOKENS,
-        system=SYSTEM_PROMPT,
-        # Caches the transcript prefix, so summarising the same transcript again is cheap.
-        cache_control={"type": "ephemeral"},
-        messages=[{"role": "user", "content": _user_content(transcript, title)}],
-    )
-    if model in MODELS_WITH_DEFAULT_FALLBACKS:
-        # If a safety classifier declines, the API re-runs the request on Anthropic's
-        # recommended fallback model instead of returning a refusal.
-        params.update(betas=[FALLBACK_BETA], fallbacks="default")
-    try:
+    params = claude_params(model, SYSTEM_PROMPT, [{"role": "user", "content": _user_content(transcript, title)}])
+    with claude_errors(model):
         with client.beta.messages.stream(**params) as stream:
             for text in stream.text_stream:
                 on_delta(text)
             message = stream.get_final_message()
-    except anthropic.AuthenticationError:
-        raise SummaryError("Anthropic rejected the API key. Check it in Settings.")
-    except anthropic.PermissionDeniedError:
-        raise SummaryError(f"This API key isn't allowed to use {model}. Check your Anthropic account or pick another model in Settings.")
-    except anthropic.NotFoundError:
-        raise SummaryError(f"The model {model} isn't available to this API key. Pick another model in Settings.")
-    except anthropic.RequestTooLargeError:
-        raise SummaryError("This transcript is too large to send in one request.")
-    except anthropic.RateLimitError as e:
-        wait = e.response.headers.get("retry-after") if e.response is not None else None
-        raise SummaryError("Anthropic rate limit reached. " + (f"Try again in {wait} s." if wait else "Try again shortly."))
-    except anthropic.OverloadedError:
-        raise SummaryError("Anthropic is overloaded right now. Try again in a minute.")
-    except anthropic.APIStatusError as e:
-        raise SummaryError(f"Anthropic API error ({e.status_code}): {e.message}")
-    except (anthropic.APIConnectionError, anthropic.APITimeoutError):
-        raise SummaryError("Could not reach Anthropic. Check your internet connection.")
 
     if message.stop_reason == "refusal":
         raise SummaryError("Claude declined to summarise this transcript.")

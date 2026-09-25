@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.4.0 (2026-09-25): Increment 2, requirement atoms
+
+- **Extract requirements from any source.** On a transcript, email or document, click
+  **Extract requirements**: the AI reads it in parts (with progress) and returns small,
+  testable **atoms**: functional, non-functional, or open questions.
+- **Every atom has proof.** Each one carries an exact quote with time and speaker. Quotes
+  are checked against the real text, and atoms whose quote can't be found are dropped.
+  Click a quote to open the source at that line.
+- **New Atoms screen** (step 3 in the rail): "N to review · A of T accepted", filters by
+  status and type, accept / edit / reject with the keyboard (`j` `k` `a` `x` `e`) and
+  Undo. Edited atoms keep their original wording.
+- **Duplicates and conflicts across sources.** New atoms are compared with the project's
+  existing ones. Duplicates are merged, and their quotes move to the existing atom.
+  Contradictions are shown as conflicts: keep A, keep B, merge into one statement, or turn
+  the conflict into a question for the client (answering it closes the conflict).
+- Extracting again replaces only the atoms you haven't reviewed yet. Accepted and rejected
+  ones stay.
+- "Local only" projects extract with the local model. Every decision goes into the audit log.
+- Libraries from 2.3.0 are upgraded automatically.
+
 ## 2.3.0 (2026-09-23): Increment 1 complete
 
 - **Recordings use their separate channels.** Your microphone is transcribed as **You (BA)**,

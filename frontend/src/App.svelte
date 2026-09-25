@@ -4,6 +4,7 @@
   import Sources from "./screens/Sources.svelte";
   import Transcript from "./screens/Transcript.svelte";
   import Settings from "./screens/Settings.svelte";
+  import Atoms from "./screens/Atoms.svelte";
   import { api } from "./lib/api.js";
   import { app, t, loadProjects, loadSources, setLang } from "./lib/state.svelte.js";
 
@@ -38,7 +39,9 @@
     <Rail />
     <main class="screen">
       {#if app.route.name === "transcript"}
-        {#key app.route.id}<Transcript id={app.route.id} autoSummarize={app.route.summarize} />{/key}
+        {#key app.route.id}<Transcript id={app.route.id} autoSummarize={app.route.summarize} focusSeg={app.route.seg} />{/key}
+      {:else if app.route.name === "atoms"}
+        <Atoms />
       {:else if app.route.name === "settings"}
         <Settings />
       {:else}

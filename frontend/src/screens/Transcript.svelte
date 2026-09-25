@@ -2,10 +2,11 @@
   import Block from "../components/Block.svelte";
   import Icon from "../components/Icon.svelte";
   import { api, pollJob } from "../lib/api.js";
+  import { extractAtoms } from "../lib/atoms.js";
   import { fmtTime, fmtDate, fmtDuration, renderMarkdown, speakerClass, speakerDisplay, downloadText } from "../lib/format.js";
   import { app, t, go, loadSources, toast, rememberSource } from "../lib/state.svelte.js";
 
-  let { id, autoSummarize = false } = $props();
+  let { id, autoSummarize = false, focusSeg = null } = $props();
 
   let source = $state(null);
   let loadError = $state("");
@@ -46,6 +47,7 @@
     let stop = false;
     load().then(async () => {
       if (autoSummarize && source?.status === "ready" && !summaryText) summarize();
+      if (focusSeg != null) showSegment(focusSeg);
       while (!stop && source && source.id === current && source.status === "processing") {
         await new Promise(r => setTimeout(r, 2000));
         if (!stop) await load();
@@ -63,9 +65,22 @@
   const activeIdx = $derived.by(() => {
     if (!source || !playing && !now) return -1;
     const segs = source.segments;
-    for (let i = segs.length - 1; i >= 0; i--) if (segs[i].start != null && segs[i].start <= now + 0.05) return i;
+    for (let i = segs.length - 1; i >= 0; i--) if (segs[i].start != null && segs[i].start <= now + 0.05) return segs[i].idx;
     return -1;
   });
+
+  // Opened from an atom's quote: bring its line into view and mark it briefly.
+  let flashIdx = $state(null);
+  function showSegment(idx) {
+    const seg = source?.segments.find(s => s.idx === idx);
+    if (!seg) return;
+    flashIdx = idx;
+    requestAnimationFrame(() => document.getElementById(`seg-${idx}`)?.scrollIntoView({ block: "center" }));
+    if (audio && seg.start != null) audio.currentTime = seg.start;
+    setTimeout(() => (flashIdx = null), 2400);
+  }
+
+  const atomCount = $derived(app.sources.find(s => s.id === id)?.atom_count || 0);
 
   function seek(seconds) {
     if (!audio || seconds == null) return;
@@ -170,7 +185,13 @@
       </div>
       <div class="actions">
         {#if source.status === "ready"}
-          <button class="btn btn-primary" onclick={summarize} disabled={summarizing}>
+          <button class="btn" class:btn-primary={!!summaryText || !!atomCount} onclick={() => atomCount ? go(`/atoms/source/${id}`) : extractAtoms(id)}
+                  disabled={!!app.extracting[id]} title={atomCount ? "" : t("at.extract")}>
+            {#if app.extracting[id]}<span class="spinner"></span> {app.extracting[id].message}
+            {:else if atomCount}{t("at.count", { n: atomCount })}
+            {:else}{t("at.extract")}{/if}
+          </button>
+          <button class="btn" class:btn-primary={!summaryText && !atomCount} onclick={summarize} disabled={summarizing}>
             {#if summarizing}<span class="spinner"></span>{/if}{summaryText ? t("tr.resummarize") : t("tr.summarize")}
           </button>
           <button class="btn" onclick={copyText}><Icon name={copied ? "check" : "copy"} /> {copied ? t("tr.copied") : t("tr.copy")}</button>
@@ -229,11 +250,11 @@
               <p class="muted">{t("tr.no_segments")}</p>
             {:else}
               <div class="segments" class:prose={isText}>
-                {#each source.segments as seg, i (seg.idx)}
+                {#each source.segments as seg (seg.idx)}
                   {#if isText}
-                    <p class="para">{seg.text}</p>
+                    <p class="para" id="seg-{seg.idx}" class:flash={seg.idx === flashIdx}>{seg.text}</p>
                   {:else}
-                  <div class="seg-row" class:active={i === activeIdx} id="seg-{i}">
+                  <div class="seg-row" class:active={seg.idx === activeIdx} class:flash={seg.idx === flashIdx} id="seg-{seg.idx}">
                     <div class="seg-meta">
                       {#if seg.start != null}
                         <button class="time" disabled={!source.audio_url} onclick={() => seek(seg.start)}>{fmtTime(seg.start)}</button>
@@ -299,5 +320,7 @@
   .prose { max-width: 72ch; }
   .para { line-height: 1.7; margin: 0 0 var(--s-3); }
   .para:last-child { margin-bottom: 0; }
+  .para { scroll-margin: 80px; border-radius: var(--r-sm); }
+  .flash { background: var(--mark) !important; transition: background .6s ease; }
   @media (max-width: 600px) { .seg-row { grid-template-columns: 1fr; gap: var(--s-1); } .seg-meta { flex-direction: row; align-items: center; } }
 </style>

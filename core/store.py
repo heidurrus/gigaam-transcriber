@@ -20,7 +20,10 @@ from contextlib import contextmanager
 
 from core.paths import app_data_dir
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+ATOM_TYPES = {"functional", "nfr", "question"}
+ATOM_STATUSES = {"pending", "accepted", "rejected", "merged"}
+CONFLICT_ACTIONS = {"keep_a", "keep_b", "merge", "question"}
 SOURCE_KINDS = {"recording", "audio", "transcript", "document", "email"}
 SOURCE_STATUSES = {"recorded", "processing", "ready", "failed"}
 
@@ -53,6 +56,23 @@ CREATE TABLE IF NOT EXISTS audit_log (
   id TEXT PRIMARY KEY, entity TEXT NOT NULL, entity_id TEXT NOT NULL, action TEXT NOT NULL,
   before_json TEXT, after_json TEXT, at REAL NOT NULL, by TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS audit_by_entity ON audit_log(entity, entity_id, at);
+CREATE TABLE IF NOT EXISTS atoms (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id),
+  type TEXT NOT NULL, statement TEXT NOT NULL, original_statement TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending', merged_into TEXT, model TEXT,
+  created_at REAL NOT NULL, created_by TEXT NOT NULL, updated_at REAL NOT NULL, updated_by TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS atoms_by_project ON atoms(project_id, status, created_at);
+CREATE TABLE IF NOT EXISTS evidence (
+  id TEXT PRIMARY KEY, atom_id TEXT NOT NULL REFERENCES atoms(id), source_id TEXT NOT NULL REFERENCES sources(id),
+  segment_idx INTEGER, start REAL, speaker TEXT, quote TEXT NOT NULL, created_at REAL NOT NULL);
+CREATE INDEX IF NOT EXISTS evidence_by_atom ON evidence(atom_id);
+CREATE INDEX IF NOT EXISTS evidence_by_source ON evidence(source_id);
+CREATE TABLE IF NOT EXISTS conflicts (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id),
+  atom_a TEXT NOT NULL REFERENCES atoms(id), atom_b TEXT NOT NULL REFERENCES atoms(id),
+  description TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open', resolution TEXT, question_atom TEXT,
+  created_at REAL NOT NULL, created_by TEXT NOT NULL, resolved_at REAL, resolved_by TEXT);
+CREATE INDEX IF NOT EXISTS conflicts_by_project ON conflicts(project_id, status);
 """
 
 PROJECT_FIELDS = ("id", "name", "local_only", "archived", "created_at", "created_by", "updated_at", "updated_by")
@@ -254,13 +274,16 @@ class Store:
 
     def list_sources(self, project_id):
         with self._conn() as c:
-            rows = c.execute("""SELECT s.*, (SELECT COUNT(*) FROM summaries m WHERE m.source_id = s.id) AS summary_count
+            rows = c.execute("""SELECT s.*, (SELECT COUNT(*) FROM summaries m WHERE m.source_id = s.id) AS summary_count,
+                                  (SELECT COUNT(DISTINCT e.atom_id) FROM evidence e JOIN atoms a ON a.id = e.atom_id
+                                   WHERE e.source_id = s.id AND a.status != 'merged') AS atom_count
                                 FROM sources s WHERE s.project_id = ? AND s.deleted_at IS NULL
                                 ORDER BY s.created_at DESC""", (project_id,)).fetchall()
         out = []
         for r in rows:
             s = self._row(r, SOURCE_FIELDS)
             s["has_summary"] = r["summary_count"] > 0
+            s["atom_count"] = r["atom_count"]
             out.append(s)
         return out
 
@@ -417,6 +440,225 @@ class Store:
             rows = c.execute(q, args).fetchall()
         return [dict(r, before=json.loads(r["before_json"]) if r["before_json"] else None,
                      after=json.loads(r["after_json"]) if r["after_json"] else None) for r in rows]
+
+    def audit_event(self, entity, entity_id, action, before=None, after=None):
+        with self._write() as c:
+            self._audit(c, entity, entity_id, action, before, after)
+
+    # ── atoms (spec increment 2: FR-ATM-*, BR-01…04, BR-13, D-06, D-09) ────────
+    def _atom_row(self, c, atom_id):
+        r = c.execute("SELECT * FROM atoms WHERE id = ?", (atom_id,)).fetchone()
+        if r is None:
+            raise StoreError("atom not found")
+        return dict(r)
+
+    def add_atoms(self, project_id, atoms, model=None):
+        """atoms: [{type, statement, evidence: [{source_id, segment_idx, start, speaker, quote}]}]"""
+        self.get_project(project_id)
+        created = []
+        with self._write() as c:
+            for a in atoms:
+                if a["type"] not in ATOM_TYPES:
+                    raise StoreError(f"unknown atom type {a['type']}")
+                statement = (a.get("statement") or "").strip()
+                if not statement or not a.get("evidence"):
+                    raise StoreError("an atom needs a statement and at least one piece of evidence")
+                now, by = self._stamp()
+                aid = str(uuid.uuid4())
+                c.execute("INSERT INTO atoms (id, project_id, type, statement, original_statement, status, model, "
+                          "created_at, created_by, updated_at, updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                          (aid, project_id, a["type"], statement, statement, "pending", model, now, by, now, by))
+                for ev in a["evidence"]:
+                    c.execute("INSERT INTO evidence VALUES (?,?,?,?,?,?,?,?)",
+                              (str(uuid.uuid4()), aid, ev["source_id"], ev.get("segment_idx"), ev.get("start"),
+                               ev.get("speaker"), ev["quote"], now))
+                self._audit(c, "atom", aid, "create", after={"type": a["type"], "statement": statement})
+                created.append(aid)
+        return created
+
+    def _evidence(self, c, atom_ids):
+        out = {i: [] for i in atom_ids}
+        if not atom_ids:
+            return out
+        marks = ",".join("?" * len(atom_ids))
+        for r in c.execute(f"""SELECT e.*, s.title AS source_title, s.kind AS source_kind,
+                               COALESCE(sp.name, e.speaker) AS speaker_name
+                               FROM evidence e JOIN sources s ON s.id = e.source_id
+                               LEFT JOIN speakers sp ON sp.source_id = e.source_id AND sp.label = e.speaker
+                               WHERE e.atom_id IN ({marks}) ORDER BY e.created_at, e.start""", atom_ids):
+            out[r["atom_id"]].append({k: r[k] for k in ("id", "source_id", "source_title", "source_kind",
+                                                         "segment_idx", "start", "speaker", "speaker_name", "quote")})
+        return out
+
+    def list_atoms(self, project_id, status=None, type=None, source_id=None):
+        q, args = "SELECT * FROM atoms WHERE project_id = ?", [project_id]
+        if status:
+            q += " AND status = ?"
+            args.append(status)
+        if type:
+            q += " AND type = ?"
+            args.append(type)
+        if source_id:
+            q += " AND id IN (SELECT atom_id FROM evidence WHERE source_id = ?)"
+            args.append(source_id)
+        q += " ORDER BY created_at, rowid"
+        with self._conn() as c:
+            atoms = [dict(r) for r in c.execute(q, args)]
+            ev = self._evidence(c, [a["id"] for a in atoms])
+            conflicts = {}
+            for r in c.execute("SELECT * FROM conflicts WHERE project_id = ? AND status != 'resolved'", (project_id,)):
+                for side, other in (("atom_a", "atom_b"), ("atom_b", "atom_a")):
+                    conflicts.setdefault(r[side], []).append({"id": r["id"], "other": r[other],
+                                                              "description": r["description"], "status": r["status"]})
+        for a in atoms:
+            a["evidence"] = ev[a["id"]]
+            a["conflicts"] = conflicts.get(a["id"], [])
+        return atoms
+
+    def get_atom(self, atom_id):
+        with self._conn() as c:
+            a = self._atom_row(c, atom_id)
+            a["evidence"] = self._evidence(c, [atom_id])[atom_id]
+        return a
+
+    def update_atom(self, atom_id, **changes):
+        allowed = {"statement", "type", "status"}
+        if not changes:
+            raise StoreError("nothing to change")
+        if set(changes) - allowed:
+            raise StoreError(f"cannot change {sorted(set(changes) - allowed)}")
+        if "type" in changes and changes["type"] not in ATOM_TYPES:
+            raise StoreError(f"unknown atom type {changes['type']}")
+        if "status" in changes and changes["status"] not in ATOM_STATUSES - {"merged"}:
+            raise StoreError("status must be pending, accepted or rejected")
+        if "statement" in changes:
+            changes["statement"] = (changes["statement"] or "").strip()
+            if not changes["statement"]:
+                raise StoreError("the statement must not be empty")
+        with self._write() as c:
+            before = self._atom_row(c, atom_id)
+            if before["status"] == "merged":
+                raise StoreError("this atom was merged into another one")
+            now, by = self._stamp()
+            sets = ", ".join(f"{k} = ?" for k in changes)
+            c.execute(f"UPDATE atoms SET {sets}, updated_at = ?, updated_by = ? WHERE id = ?",
+                      (*changes.values(), now, by, atom_id))
+            after = self._atom_row(c, atom_id)
+            action = changes.get("status") if set(changes) == {"status"} else "edit"
+            self._audit(c, "atom", atom_id, action, {k: before[k] for k in changes}, {k: after[k] for k in changes})
+        return self.get_atom(atom_id)
+
+    def merge_atoms(self, duplicate_id, into_id, audit_reason="duplicate"):
+        """Fold a duplicate into another atom: its quotes move over, it leaves the review queue (BR-03)."""
+        if duplicate_id == into_id:
+            raise StoreError("cannot merge an atom into itself")
+        with self._write() as c:
+            dup, target = self._atom_row(c, duplicate_id), self._atom_row(c, into_id)
+            if dup["project_id"] != target["project_id"]:
+                raise StoreError("atoms belong to different projects")
+            if target["status"] == "merged":
+                into_id = target["merged_into"]
+            have = {(r["source_id"], r["quote"]) for r in c.execute(
+                "SELECT source_id, quote FROM evidence WHERE atom_id = ?", (into_id,))}
+            for r in c.execute("SELECT * FROM evidence WHERE atom_id = ?", (duplicate_id,)).fetchall():
+                if (r["source_id"], r["quote"]) in have:
+                    c.execute("DELETE FROM evidence WHERE id = ?", (r["id"],))
+                else:
+                    c.execute("UPDATE evidence SET atom_id = ? WHERE id = ?", (into_id, r["id"]))
+            now, by = self._stamp()
+            c.execute("UPDATE atoms SET status = 'merged', merged_into = ?, updated_at = ?, updated_by = ? WHERE id = ?",
+                      (into_id, now, by, duplicate_id))
+            self._audit(c, "atom", duplicate_id, "merge", {"status": dup["status"]},
+                        {"merged_into": into_id, "reason": audit_reason})
+
+    def delete_pending_atoms_for_source(self, source_id):
+        """Before re-extraction: drop atoms still pending that only this source supports
+        (reviewed atoms are kept, so no review work is lost; spec FR-TR-04 AC2)."""
+        with self._write() as c:
+            ids = [r["id"] for r in c.execute(
+                """SELECT a.id FROM atoms a WHERE a.status = 'pending'
+                   AND EXISTS (SELECT 1 FROM evidence e WHERE e.atom_id = a.id AND e.source_id = ?)
+                   AND NOT EXISTS (SELECT 1 FROM evidence e WHERE e.atom_id = a.id AND e.source_id != ?)""",
+                (source_id, source_id))]
+            for aid in ids:
+                c.execute("DELETE FROM conflicts WHERE atom_a = ? OR atom_b = ?", (aid, aid))
+                c.execute("DELETE FROM evidence WHERE atom_id = ?", (aid,))
+                c.execute("DELETE FROM atoms WHERE id = ?", (aid,))
+            if ids:
+                self._audit(c, "source", source_id, "clear_pending_atoms", after={"count": len(ids)})
+        return len(ids)
+
+    def atom_stats(self, project_id):
+        with self._conn() as c:
+            counts = {r["status"]: r["n"] for r in c.execute(
+                "SELECT status, COUNT(*) AS n FROM atoms WHERE project_id = ? GROUP BY status", (project_id,))}
+            open_conflicts = c.execute("SELECT COUNT(*) FROM conflicts WHERE project_id = ? AND status = 'open'",
+                                       (project_id,)).fetchone()[0]
+        stats = {s: counts.get(s, 0) for s in ATOM_STATUSES}
+        stats["total"] = sum(v for k, v in stats.items() if k != "merged")
+        stats["open_conflicts"] = open_conflicts
+        return stats
+
+    # ── conflicts (D-06: keep one / merge / turn into a question; never blocks) ──
+    def add_conflict(self, project_id, atom_a, atom_b, description):
+        with self._write() as c:
+            now, by = self._stamp()
+            cid = str(uuid.uuid4())
+            c.execute("INSERT INTO conflicts (id, project_id, atom_a, atom_b, description, status, created_at, created_by) "
+                      "VALUES (?,?,?,?,?,'open',?,?)", (cid, project_id, atom_a, atom_b, description.strip(), now, by))
+            self._audit(c, "conflict", cid, "create", after={"atoms": [atom_a, atom_b], "description": description})
+        return cid
+
+    def list_conflicts(self, project_id, include_resolved=False):
+        q = "SELECT * FROM conflicts WHERE project_id = ?" + ("" if include_resolved else " AND status != 'resolved'")
+        with self._conn() as c:
+            rows = [dict(r) for r in c.execute(q + " ORDER BY created_at", (project_id,))]
+        for r in rows:
+            r["a"], r["b"] = self.get_atom(r["atom_a"]), self.get_atom(r["atom_b"])
+        return rows
+
+    def resolve_conflict(self, conflict_id, action, statement=None):
+        if action not in CONFLICT_ACTIONS:
+            raise StoreError(f"unknown resolution {action}")
+        with self._conn() as c:
+            conf = c.execute("SELECT * FROM conflicts WHERE id = ?", (conflict_id,)).fetchone()
+        if conf is None:
+            raise StoreError("conflict not found")
+        conf = dict(conf)
+        a, b = conf["atom_a"], conf["atom_b"]
+        question_atom, status = None, "resolved"
+        if action == "keep_a":
+            self.update_atom(b, status="rejected")
+        elif action == "keep_b":
+            self.update_atom(a, status="rejected")
+        elif action == "merge":
+            if not (statement or "").strip():
+                raise StoreError("merging needs the combined statement")
+            self.update_atom(a, statement=statement)
+            self.merge_atoms(b, a, audit_reason="conflict merge")
+        else:  # question: ask the client; both stay flagged until it's answered (BR-17)
+            atom_a = self.get_atom(a)
+            text = (statement or "").strip() or f"Уточнить у заказчика: {conf['description']}"
+            evidence = [{k: e[k] for k in ("source_id", "segment_idx", "start", "speaker", "quote")}
+                        for e in atom_a["evidence"] + self.get_atom(b)["evidence"]]
+            question_atom = self.add_atoms(atom_a["project_id"], [{"type": "question", "statement": text,
+                                                                   "evidence": evidence}])[0]
+            status = "awaiting_answer"
+        with self._write() as c:
+            now, by = self._stamp()
+            c.execute("UPDATE conflicts SET status = ?, resolution = ?, question_atom = ?, resolved_at = ?, resolved_by = ? "
+                      "WHERE id = ?", (status, action, question_atom, now, by, conflict_id))
+            self._audit(c, "conflict", conflict_id, "resolve", {"status": "open"},
+                        {"status": status, "resolution": action, "question_atom": question_atom})
+        return {"status": status, "question_atom": question_atom}
+
+    def answer_question(self, question_atom_id):
+        """Accepting a question raised by a conflict closes that conflict."""
+        with self._write() as c:
+            now, by = self._stamp()
+            n = c.execute("UPDATE conflicts SET status = 'resolved', resolved_at = ?, resolved_by = ? "
+                          "WHERE question_atom = ? AND status = 'awaiting_answer'", (now, by, question_atom_id)).rowcount
+        return n
 
     # ── files ────────────────────────────────────────────────────────────────
     def attach_file(self, source, src_path, name, move=False):
